@@ -22,6 +22,11 @@ class File(Base):
     mime_type = Column(String, nullable=True)
     size_bytes = Column(BigInteger, nullable=False, default=0)
 
+    # "pending" once init-upload creates the metadata row and hands out a
+    # signed upload URL; "uploaded" once complete-upload confirms the bytes
+    # landed in storage. Files stuck in "pending" are safe to garbage-collect.
+    upload_status = Column(String, nullable=False, default="pending")
+
     is_starred = Column(Boolean, default=False, nullable=False)
     is_trashed = Column(Boolean, default=False, nullable=False)
     trashed_at = Column(DateTime, nullable=True)

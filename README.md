@@ -4,6 +4,19 @@ Google Drive–style file storage & sharing app. Stack: **React + Vite + Tailwin
 (frontend, starts Day 8), **FastAPI** (backend), **Supabase Postgres** (database),
 **Supabase Storage** (files). Built against the 14-day plan in the project spec.
 
+## Day 3 status — File Upload & Object Storage ✅
+
+- [x] File upload flow implemented: `POST /files/init-upload` → `POST /files/{id}/complete-upload` → `GET /files/{id}`
+- [x] Client uploads bytes **directly to Supabase Storage** via a signed URL — file bytes never pass through the backend
+- [x] File metadata (name, owner, folder, size, mime type, storage path, upload status) saved to the `files` table
+- [x] Size validation (`MAX_UPLOAD_SIZE_MB`, default 100MB) and mime-type blocklist enforced on `init-upload`
+- [x] `complete-upload` verifies the object actually exists in storage before marking a file "uploaded" — can't be faked by calling the endpoint without uploading
+- [x] Ownership enforced: a file is only readable by the user who created it
+
+⚠️ **Temporary auth stand-in** — real JWT auth (register/login/tokens) hasn't been built yet, since the frontend day got built ahead of it in this plan. Every endpoint that needs "the current user" currently reads a plain `X-User-Id: <uuid>` header instead of a verified JWT (see `app/core/deps.py` — it says so loudly in a docstring). **This is not secure** — anyone can claim to be any user by setting the header. It exists only so the upload flow could be built and tested against real foreign-key relationships today. This needs to be replaced with real auth before this goes anywhere near production; flagging it now so it isn't missed later.
+
+⚠️ **Not tested against a live Supabase project** — this sandbox's network egress doesn't allow reaching `*.supabase.co`, so I could not verify the signed-URL flow against real Supabase Storage. What I did verify: an automated smoke test (`backend/scripts/dev_smoke_test.py`) boots the real FastAPI app against an in-memory database with the real model/route/validation code, and fakes out only the two Supabase network calls — proving the endpoint logic, size/type validation, ownership checks, and pending→uploaded status transition are all correct. The actual Supabase Storage calls (`create_signed_upload_url`, `list`, `create_signed_url`) are unit-tested against the installed `supabase-py` SDK's real method signatures, but not against a live bucket. **You'll need to test the real upload against your Supabase project yourself** once credentials are in `backend/.env` — see verification steps below.
+
 ## Day 2 status — Frontend Setup & Backend Connection ✅
 
 - [x] React + Vite + Tailwind CSS frontend scaffolded in `frontend/`
@@ -59,7 +72,7 @@ frontend/
 └── .env.example
 ```
 
-## Setting up Supabase (Day 1)
+## Setting up Supabase
 
 1. Create a project at [supabase.com](https://supabase.com) (free tier is fine for MVP dev).
 2. **Project Settings → API**: copy the `Project URL`, `anon public` key, and
@@ -68,9 +81,17 @@ frontend/
 3. **Project Settings → Database**: copy the connection string (use the *connection
    pooling* URI) into `DATABASE_URL` in `backend/.env`.
 4. **Storage**: create a bucket named `files` (matches `SUPABASE_STORAGE_BUCKET` in
-   `.env`) — this is wired up for real on Day 3.
-5. Tables are not created yet — that happens once Alembic migrations are added
-   (Day 2 backend work, not yet done), so the models are reviewed/confirmed first.
+   `.env`). It can be **private** — the backend uses signed URLs for both upload and
+   download, so the bucket never needs to be public.
+5. **Database tables**: not created yet — Alembic migrations haven't been added, so for
+   now you'll need to create the tables manually. Easiest option: temporarily run this
+   once from a Python shell with your real `DATABASE_URL` set, to create every table
+   from the SQLAlchemy models:
+   ```bash
+   cd backend && source .venv/bin/activate
+   python3 -c "from app.core.database import Base, engine; import app.models; Base.metadata.create_all(engine)"
+   ```
+   (Alembic migrations will replace this ad-hoc step later.)
 
 ## Running everything locally
 
@@ -82,7 +103,7 @@ cd backend
 python3 -m venv .venv
 source .venv/bin/activate        # Windows: .venv\Scripts\activate
 pip install -r requirements.txt
-cp .env.example .env             # fill in your Supabase values (optional for Day 1/2 — app boots without them)
+cp .env.example .env             # fill in your Supabase values — required for Day 3 uploads to work
 uvicorn app.main:app --reload
 ```
 Verify: open `http://localhost:8000/health` → `{"status": "healthy", "env": "development"}`.
@@ -99,8 +120,57 @@ Verify: open `http://localhost:5173` in a browser.
 - Top-right badge should read **"Backend connected (development)"** with a green dot within a couple seconds.
 - If it reads "Backend unreachable" (red dot), confirm the backend terminal is still running on port 8000 and that `frontend/.env`'s `VITE_API_URL` matches it.
 
-## Next up (Day 3)
+## Verifying the Day 3 upload flow
 
-File Upload & Object Storage: configure the Supabase Storage bucket for real, implement
-the init-upload / signed-URL / complete-upload flow on the backend, save file metadata
-in the DB. Not started yet — waiting on your confirmation of Day 2.
+**Without Supabase configured** — run the automated smoke test, which fakes the two
+Supabase Storage calls and checks 14 things (validation, ownership, status
+transitions) against the real route/model code:
+```bash
+cd backend && source .venv/bin/activate
+python3 scripts/dev_smoke_test.py
+```
+You should see 14 `[PASS]` lines and `All checks passed.`
+
+**Against your real Supabase project** — once `backend/.env` has real credentials and
+the tables exist (see setup steps above), start the backend and run this from another
+terminal. It uses a random `X-User-Id` — since real auth isn't built yet, you'll need
+a matching row in the `users` table first, or you'll get a foreign-key error on
+`init-upload`. Easiest way to get one:
+```bash
+python3 -c "
+import uuid
+from app.core.database import SessionLocal
+from app.models.user import User
+db = SessionLocal()
+u = User(id=uuid.uuid4(), email='you@example.com', password_hash='x')
+db.add(u); db.commit()
+print(u.id)
+"
+```
+Then, with that id as `USER_ID`:
+```bash
+# 1. init-upload — get a signed URL
+curl -s -X POST http://localhost:8000/files/init-upload \
+  -H "Content-Type: application/json" -H "X-User-Id: $USER_ID" \
+  -d '{"filename":"test.txt","mime_type":"text/plain","size_bytes":11}'
+# copy "upload_url" and "file_id" from the response
+
+# 2. PUT the actual bytes straight to Supabase Storage
+curl -s -X PUT "<upload_url from above>" \
+  -H "Content-Type: text/plain" --data-binary "hello world"
+
+# 3. complete-upload — backend verifies the object exists, marks it "uploaded"
+curl -s -X POST http://localhost:8000/files/<file_id>/complete-upload \
+  -H "X-User-Id: $USER_ID"
+
+# 4. confirm metadata + a working signed download URL
+curl -s http://localhost:8000/files/<file_id> -H "X-User-Id: $USER_ID"
+```
+Step 4's `download_url` should be a real, fetchable Supabase URL — opening it in a
+browser should download the file you uploaded.
+
+## Next up (Day 4)
+
+File & folder operations: create folder, rename, move, and (soft) delete for both
+files and folders, plus listing a folder's contents. Not started yet — waiting on
+your confirmation of Day 3.
