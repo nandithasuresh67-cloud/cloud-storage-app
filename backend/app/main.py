@@ -2,7 +2,7 @@ from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
 from app.core.config import get_settings
-from app.routes import files
+from app.routes import files, folders
 
 settings = get_settings()
 
@@ -17,6 +17,7 @@ app.add_middleware(
 )
 
 app.include_router(files.router)
+app.include_router(folders.router)
 
 
 @app.get("/")

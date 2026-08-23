@@ -1,4 +1,5 @@
 import uuid
+from datetime import datetime
 
 from fastapi import APIRouter, Depends, HTTPException, status
 from sqlalchemy.orm import Session
@@ -14,6 +15,7 @@ from app.schemas.file import (
     FileInitUploadResponse,
     FileOut,
     FileOutWithDownloadUrl,
+    FileUpdateRequest,
 )
 from app.services import storage_service
 
@@ -149,3 +151,52 @@ def get_file(
             download_url = None  # metadata is still viewable even if storage isn't configured
 
     return FileOutWithDownloadUrl(**FileOut.model_validate(file).model_dump(), download_url=download_url)
+
+
+@router.patch("/{file_id}", response_model=FileOut)
+def update_file(
+    file_id: uuid.UUID,
+    payload: FileUpdateRequest,
+    db: Session = Depends(get_db),
+    owner_id: uuid.UUID = Depends(get_current_user_id),
+):
+    """Rename and/or move a file. Does not touch the object in storage - only metadata."""
+    file = _get_owned_file_or_404(db, file_id, owner_id)
+    fields_set = payload.model_fields_set
+
+    if "name" in fields_set and payload.name is not None:
+        file.name = payload.name
+
+    if "folder_id" in fields_set:
+        new_folder_id = payload.folder_id
+        if new_folder_id is not None:
+            folder = (
+                db.query(Folder)
+                .filter(Folder.id == new_folder_id, Folder.owner_id == owner_id, Folder.is_trashed.is_(False))
+                .first()
+            )
+            if folder is None:
+                raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Folder not found")
+        file.folder_id = new_folder_id
+
+    db.commit()
+    db.refresh(file)
+    return file
+
+
+@router.delete("/{file_id}", status_code=status.HTTP_204_NO_CONTENT)
+def delete_file(
+    file_id: uuid.UUID,
+    db: Session = Depends(get_db),
+    owner_id: uuid.UUID = Depends(get_current_user_id),
+):
+    """
+    Soft delete - flips is_trashed, leaves the object in storage untouched.
+    Permanent deletion (and restore) is a Day 6 (Trash & Restore) feature.
+    """
+    file = _get_owned_file_or_404(db, file_id, owner_id)
+    if not file.is_trashed:
+        file.is_trashed = True
+        file.trashed_at = datetime.utcnow()
+        db.commit()
+    return None

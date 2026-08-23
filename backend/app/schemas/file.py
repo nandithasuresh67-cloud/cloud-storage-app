@@ -55,3 +55,24 @@ class FileOut(BaseModel):
 
 class FileOutWithDownloadUrl(FileOut):
     download_url: Optional[str] = None
+
+
+class FileUpdateRequest(BaseModel):
+    """
+    Partial update for rename and/or move. Same `model_fields_set` pattern
+    as FolderUpdateRequest - lets the client explicitly move a file to the
+    root with `{"folder_id": null}` while leaving it out entirely means
+    "don't touch the folder".
+    """
+
+    name: Optional[str] = Field(None, min_length=1, max_length=255)
+    folder_id: Optional[uuid.UUID] = None
+
+    @field_validator("name")
+    @classmethod
+    def no_path_separators(cls, v: Optional[str]) -> Optional[str]:
+        if v is None:
+            return v
+        if "/" in v or "\\" in v or v in (".", ".."):
+            raise ValueError("name must not contain path separators")
+        return v

@@ -4,6 +4,19 @@ Google Drive–style file storage & sharing app. Stack: **React + Vite + Tailwin
 (frontend, starts Day 8), **FastAPI** (backend), **Supabase Postgres** (database),
 **Supabase Storage** (files). Built against the 14-day plan in the project spec.
 
+## Day 4 status — Folder System & File Management APIs ✅
+
+- [x] Folder CRUD: `POST /folders` (create, optionally nested via `parent_id`), `GET /folders/{id}`, `PATCH /folders/{id}` (rename and/or move), `DELETE /folders/{id}` (soft delete)
+- [x] `GET /folders/contents?folder_id=<uuid>` (omit for root) — lists subfolders + files directly inside, plus the breadcrumb path to get there
+- [x] File operations: `PATCH /files/{id}` (rename and/or move between folders), `DELETE /files/{id}` (soft delete)
+- [x] Breadcrumb logic implemented by walking `parent_id` up to the root (`app/services/folder_service.py`)
+- [x] Cycle prevention: moving a folder into itself or into one of its own descendants is rejected with `400`, instead of silently corrupting the tree
+- [x] Ownership enforced everywhere (404, not 403, for folders/files you don't own — doesn't leak whether something exists)
+
+⚠️ **Soft delete does not cascade yet.** Deleting a folder only flips that folder's own `is_trashed` — its children are untouched and still directly fetchable. Full recursive trash (and restore) semantics are a Day 6 feature; noted clearly in the route docstrings so it isn't mistaken for a bug.
+
+No live-Supabase caveat this time — folders don't touch Storage at all, only the DB. Same testing approach as Day 3 (see below) still applies to the file init-upload calls this test also exercises.
+
 ## Day 3 status — File Upload & Object Storage ✅
 
 - [x] File upload flow implemented: `POST /files/init-upload` → `POST /files/{id}/complete-upload` → `GET /files/{id}`
@@ -120,16 +133,16 @@ Verify: open `http://localhost:5173` in a browser.
 - Top-right badge should read **"Backend connected (development)"** with a green dot within a couple seconds.
 - If it reads "Backend unreachable" (red dot), confirm the backend terminal is still running on port 8000 and that `frontend/.env`'s `VITE_API_URL` matches it.
 
-## Verifying the Day 3 upload flow
+## Verifying the Day 3 & Day 4 flows
 
-**Without Supabase configured** — run the automated smoke test, which fakes the two
-Supabase Storage calls and checks 14 things (validation, ownership, status
-transitions) against the real route/model code:
+**Without Supabase configured** — run the automated smoke tests, which fake the two
+Supabase Storage calls where needed and check the real route/model code:
 ```bash
 cd backend && source .venv/bin/activate
-python3 scripts/dev_smoke_test.py
+python3 scripts/dev_smoke_test.py         # Day 3: upload flow — 14 checks
+python3 scripts/dev_smoke_test_day4.py    # Day 4: folders & file ops — 33 checks
 ```
-You should see 14 `[PASS]` lines and `All checks passed.`
+Both should end with `All checks passed.`
 
 **Against your real Supabase project** — once `backend/.env` has real credentials and
 the tables exist (see setup steps above), start the backend and run this from another
@@ -169,8 +182,8 @@ curl -s http://localhost:8000/files/<file_id> -H "X-User-Id: $USER_ID"
 Step 4's `download_url` should be a real, fetchable Supabase URL — opening it in a
 browser should download the file you uploaded.
 
-## Next up (Day 4)
+## Next up (Day 5)
 
-File & folder operations: create folder, rename, move, and (soft) delete for both
-files and folders, plus listing a folder's contents. Not started yet — waiting on
-your confirmation of Day 3.
+Sharing & Permissions: role-based access control (owner/editor/viewer), share a
+file/folder with another user, and public shareable links. Not started yet —
+waiting on your confirmation of Day 4.
