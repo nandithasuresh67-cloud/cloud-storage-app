@@ -11,29 +11,22 @@ from app.models.file import File
 from app.models.folder import Folder
 from app.schemas.folder import FolderContents, FolderCreateRequest, FolderOut, FolderUpdateRequest
 from app.services import folder_service
+from app.services.permissions import Role, require_folder_access
 
 router = APIRouter(prefix="/folders", tags=["folders"])
-
-
-def _get_owned_folder_or_404(db: Session, folder_id: uuid.UUID, owner_id: uuid.UUID) -> Folder:
-    folder = db.query(Folder).filter(Folder.id == folder_id, Folder.owner_id == owner_id).first()
-    if folder is None:
-        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Folder not found")
-    return folder
 
 
 @router.post("", response_model=FolderOut, status_code=status.HTTP_201_CREATED)
 def create_folder(
     payload: FolderCreateRequest,
     db: Session = Depends(get_db),
-    owner_id: uuid.UUID = Depends(get_current_user_id),
+    user_id: uuid.UUID = Depends(get_current_user_id),
 ):
     if payload.parent_id is not None:
-        # 404 rather than a generic 400 - from the caller's point of view a
-        # parent they don't own is indistinguishable from one that doesn't exist.
-        _get_owned_folder_or_404(db, payload.parent_id, owner_id)
+        # Creating inside a shared folder requires EDITOR+ on that folder.
+        require_folder_access(db, payload.parent_id, user_id, Role.EDITOR)
 
-    folder = Folder(name=payload.name, owner_id=owner_id, parent_id=payload.parent_id)
+    folder = Folder(name=payload.name, owner_id=user_id, parent_id=payload.parent_id)
     db.add(folder)
     db.commit()
     db.refresh(folder)
@@ -42,28 +35,33 @@ def create_folder(
 
 @router.get("/contents", response_model=FolderContents)
 def list_contents(
-    folder_id: Optional[uuid.UUID] = Query(None, description="Omit to list the root"),
+    folder_id: Optional[uuid.UUID] = Query(None, description="Omit to list your own root"),
     db: Session = Depends(get_db),
-    owner_id: uuid.UUID = Depends(get_current_user_id),
+    user_id: uuid.UUID = Depends(get_current_user_id),
 ):
     """
-    Lists the subfolders and files directly inside `folder_id` (or the
-    root, if omitted), plus the breadcrumb path to get there. This is what
-    the frontend's file browser calls when navigating.
+    Lists the subfolders and files directly inside `folder_id` (or your
+    own root, if omitted), plus the breadcrumb path to get there. Requires
+    VIEWER+ access - works for folders shared with you too, not just ones
+    you own. (The root itself isn't shareable as a whole - it's always
+    your own root when folder_id is omitted.)
     """
     folder = None
     if folder_id is not None:
-        folder = _get_owned_folder_or_404(db, folder_id, owner_id)
+        folder = require_folder_access(db, folder_id, user_id, Role.VIEWER)
+        owner_id_for_listing = folder.owner_id
+    else:
+        owner_id_for_listing = user_id
 
     subfolders = (
         db.query(Folder)
-        .filter(Folder.owner_id == owner_id, Folder.parent_id == folder_id, Folder.is_trashed.is_(False))
+        .filter(Folder.owner_id == owner_id_for_listing, Folder.parent_id == folder_id, Folder.is_trashed.is_(False))
         .order_by(Folder.name)
         .all()
     )
     files = (
         db.query(File)
-        .filter(File.owner_id == owner_id, File.folder_id == folder_id, File.is_trashed.is_(False))
+        .filter(File.owner_id == owner_id_for_listing, File.folder_id == folder_id, File.is_trashed.is_(False))
         .order_by(File.name)
         .all()
     )
@@ -80,9 +78,9 @@ def list_contents(
 def get_folder(
     folder_id: uuid.UUID,
     db: Session = Depends(get_db),
-    owner_id: uuid.UUID = Depends(get_current_user_id),
+    user_id: uuid.UUID = Depends(get_current_user_id),
 ):
-    return _get_owned_folder_or_404(db, folder_id, owner_id)
+    return require_folder_access(db, folder_id, user_id, Role.VIEWER)
 
 
 @router.patch("/{folder_id}", response_model=FolderOut)
@@ -90,9 +88,9 @@ def update_folder(
     folder_id: uuid.UUID,
     payload: FolderUpdateRequest,
     db: Session = Depends(get_db),
-    owner_id: uuid.UUID = Depends(get_current_user_id),
+    user_id: uuid.UUID = Depends(get_current_user_id),
 ):
-    folder = _get_owned_folder_or_404(db, folder_id, owner_id)
+    folder = require_folder_access(db, folder_id, user_id, Role.EDITOR)
     fields_set = payload.model_fields_set
 
     if "name" in fields_set and payload.name is not None:
@@ -103,7 +101,7 @@ def update_folder(
         if new_parent_id is not None:
             if new_parent_id == folder.id:
                 raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="A folder cannot be its own parent.")
-            _get_owned_folder_or_404(db, new_parent_id, owner_id)
+            require_folder_access(db, new_parent_id, user_id, Role.EDITOR)
             if folder_service.is_descendant(db, new_parent_id, folder.id):
                 raise HTTPException(
                     status_code=status.HTTP_400_BAD_REQUEST,
@@ -120,15 +118,16 @@ def update_folder(
 def delete_folder(
     folder_id: uuid.UUID,
     db: Session = Depends(get_db),
-    owner_id: uuid.UUID = Depends(get_current_user_id),
+    user_id: uuid.UUID = Depends(get_current_user_id),
 ):
     """
-    Soft delete only - flips is_trashed on this folder. Does NOT cascade to
-    child files/folders yet; recursive trash/restore semantics are a Day 6
-    (Trash & Restore) feature. For now a trashed folder's children remain
-    is_trashed=False and would still show up if fetched directly by id.
+    Soft delete only - flips is_trashed on this folder. Requires EDITOR+
+    access. Does NOT cascade to child files/folders yet; recursive
+    trash/restore semantics are a Day 6 (Trash & Restore) feature. For now
+    a trashed folder's children remain is_trashed=False and would still
+    show up if fetched directly by id.
     """
-    folder = _get_owned_folder_or_404(db, folder_id, owner_id)
+    folder = require_folder_access(db, folder_id, user_id, Role.EDITOR)
     if not folder.is_trashed:
         folder.is_trashed = True
         folder.trashed_at = datetime.utcnow()

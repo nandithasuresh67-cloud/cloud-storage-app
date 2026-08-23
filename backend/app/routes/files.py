@@ -8,7 +8,6 @@ from app.core.config import get_settings
 from app.core.database import get_db
 from app.core.deps import get_current_user_id
 from app.models.file import File
-from app.models.folder import Folder
 from app.schemas.file import (
     FileCompleteUploadRequest,
     FileInitUploadRequest,
@@ -18,28 +17,27 @@ from app.schemas.file import (
     FileUpdateRequest,
 )
 from app.services import storage_service
+from app.services.permissions import Role, require_file_access, require_folder_access
 
 router = APIRouter(prefix="/files", tags=["files"])
 settings = get_settings()
-
-
-def _get_owned_file_or_404(db: Session, file_id: uuid.UUID, owner_id: uuid.UUID) -> File:
-    file = db.query(File).filter(File.id == file_id, File.owner_id == owner_id).first()
-    if file is None:
-        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="File not found")
-    return file
 
 
 @router.post("/init-upload", response_model=FileInitUploadResponse, status_code=status.HTTP_201_CREATED)
 def init_upload(
     payload: FileInitUploadRequest,
     db: Session = Depends(get_db),
-    owner_id: uuid.UUID = Depends(get_current_user_id),
+    user_id: uuid.UUID = Depends(get_current_user_id),
 ):
     """
     Step 1 of the upload flow: validate, create the metadata row (status
     "pending"), and hand back a signed URL the client uploads bytes to
     directly. Nothing here touches the file's actual bytes.
+
+    The uploaded file is always owned by the uploader (`user_id`), even
+    when uploading into a folder someone else shared with you as editor -
+    you need EDITOR+ access to the target folder, but ownership of the new
+    file itself stays with whoever created it.
     """
     # --- Size validation ---
     if payload.size_bytes > settings.max_upload_size_bytes:
@@ -55,21 +53,15 @@ def init_upload(
             detail=f"File type '{payload.mime_type}' is not allowed.",
         )
 
-    # --- Folder ownership check (if uploading into a folder) ---
+    # --- Folder permission check (if uploading into a folder) ---
     if payload.folder_id is not None:
-        folder = (
-            db.query(Folder)
-            .filter(Folder.id == payload.folder_id, Folder.owner_id == owner_id, Folder.is_trashed.is_(False))
-            .first()
-        )
-        if folder is None:
-            raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Folder not found")
+        require_folder_access(db, payload.folder_id, user_id, Role.EDITOR)
 
-    storage_path = f"{owner_id}/{uuid.uuid4()}/{payload.filename}"
+    storage_path = f"{user_id}/{uuid.uuid4()}/{payload.filename}"
 
     file = File(
         name=payload.filename,
-        owner_id=owner_id,
+        owner_id=user_id,
         folder_id=payload.folder_id,
         storage_bucket=settings.SUPABASE_STORAGE_BUCKET,
         storage_path=storage_path,
@@ -103,7 +95,7 @@ def complete_upload(
     file_id: uuid.UUID,
     _payload: FileCompleteUploadRequest = FileCompleteUploadRequest(),
     db: Session = Depends(get_db),
-    owner_id: uuid.UUID = Depends(get_current_user_id),
+    user_id: uuid.UUID = Depends(get_current_user_id),
 ):
     """
     Step 2: client has PUT the bytes to the signed URL from init-upload and
@@ -111,7 +103,7 @@ def complete_upload(
     before flipping status to "uploaded" - a client calling this without
     ever uploading shouldn't be able to fake a completed file.
     """
-    file = _get_owned_file_or_404(db, file_id, owner_id)
+    file = require_file_access(db, file_id, user_id, Role.EDITOR)
 
     if file.upload_status == "uploaded":
         return file  # idempotent - calling twice isn't an error
@@ -137,9 +129,9 @@ def complete_upload(
 def get_file(
     file_id: uuid.UUID,
     db: Session = Depends(get_db),
-    owner_id: uuid.UUID = Depends(get_current_user_id),
+    user_id: uuid.UUID = Depends(get_current_user_id),
 ):
-    file = _get_owned_file_or_404(db, file_id, owner_id)
+    file = require_file_access(db, file_id, user_id, Role.VIEWER)
 
     download_url = None
     if file.upload_status == "uploaded":
@@ -158,10 +150,10 @@ def update_file(
     file_id: uuid.UUID,
     payload: FileUpdateRequest,
     db: Session = Depends(get_db),
-    owner_id: uuid.UUID = Depends(get_current_user_id),
+    user_id: uuid.UUID = Depends(get_current_user_id),
 ):
-    """Rename and/or move a file. Does not touch the object in storage - only metadata."""
-    file = _get_owned_file_or_404(db, file_id, owner_id)
+    """Rename and/or move a file. Requires EDITOR+ access. Does not touch the object in storage - only metadata."""
+    file = require_file_access(db, file_id, user_id, Role.EDITOR)
     fields_set = payload.model_fields_set
 
     if "name" in fields_set and payload.name is not None:
@@ -170,13 +162,7 @@ def update_file(
     if "folder_id" in fields_set:
         new_folder_id = payload.folder_id
         if new_folder_id is not None:
-            folder = (
-                db.query(Folder)
-                .filter(Folder.id == new_folder_id, Folder.owner_id == owner_id, Folder.is_trashed.is_(False))
-                .first()
-            )
-            if folder is None:
-                raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Folder not found")
+            require_folder_access(db, new_folder_id, user_id, Role.EDITOR)
         file.folder_id = new_folder_id
 
     db.commit()
@@ -188,13 +174,14 @@ def update_file(
 def delete_file(
     file_id: uuid.UUID,
     db: Session = Depends(get_db),
-    owner_id: uuid.UUID = Depends(get_current_user_id),
+    user_id: uuid.UUID = Depends(get_current_user_id),
 ):
     """
     Soft delete - flips is_trashed, leaves the object in storage untouched.
-    Permanent deletion (and restore) is a Day 6 (Trash & Restore) feature.
+    Requires EDITOR+ access (owner or editor share). Permanent deletion
+    (and restore) is a Day 6 (Trash & Restore) feature.
     """
-    file = _get_owned_file_or_404(db, file_id, owner_id)
+    file = require_file_access(db, file_id, user_id, Role.EDITOR)
     if not file.is_trashed:
         file.is_trashed = True
         file.trashed_at = datetime.utcnow()

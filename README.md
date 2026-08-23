@@ -4,6 +4,21 @@ Google Drive–style file storage & sharing app. Stack: **React + Vite + Tailwin
 (frontend, starts Day 8), **FastAPI** (backend), **Supabase Postgres** (database),
 **Supabase Storage** (files). Built against the 14-day plan in the project spec.
 
+## Day 5 status — Sharing & Permissions ✅
+
+- [x] Role-based access control: **Owner** (full control), **Editor** (upload/rename/move/delete), **Viewer** (read-only), **Public User** (access via link) — implemented as a ranked enum in `app/services/permissions.py`
+- [x] `POST /shares` — share a file/folder with another user by email + role. Owner-only. Sharing the same person again updates their role instead of creating a duplicate.
+- [x] `GET /shares?file_id=` or `?folder_id=` — list who a resource is shared with (owner-only, "manage access")
+- [x] `DELETE /shares/{id}` — revoke access
+- [x] `GET /shares/shared-with-me` — top-level items shared with you
+- [x] `POST /public-link` / `DELETE /public-link/{id}` — create/revoke a public link, optional expiry and password (owner-only)
+- [x] `POST /public-link/{token}/access` — **no authentication required** — the "Public User" path from the spec's role list. Password sent in the body (not a query string) so it doesn't end up in server/proxy logs.
+- [x] **Permission validation middleware** — every file/folder route (Day 3 & 4) was refactored from strict-ownership checks to `require_file_access(...)` / `require_folder_access(...)`, so shared access is enforced in one place instead of being bolted onto each route separately
+- [x] **Sharing a folder cascades** to everything inside it — share the folder once, and viewer/editor access applies to every file and subfolder underneath, resolved by walking up each item's `parent_id` chain. Sharing a single file only grants access to that file.
+- [x] Existence isn't leaked: no access at all → `404`; some access but not enough (e.g. viewer trying to `DELETE`) → `403`
+
+⚠️ **Public folder links are one level deep.** A public link to a folder lists that folder's immediate files/subfolders, but browsing *into* a listed subfolder via the public link isn't wired up yet — that would need per-subfolder access derived from the same token. Noted as a known limitation rather than silently half-working.
+
 ## Day 4 status — Folder System & File Management APIs ✅
 
 - [x] Folder CRUD: `POST /folders` (create, optionally nested via `parent_id`), `GET /folders/{id}`, `PATCH /folders/{id}` (rename and/or move), `DELETE /folders/{id}` (soft delete)
@@ -133,7 +148,7 @@ Verify: open `http://localhost:5173` in a browser.
 - Top-right badge should read **"Backend connected (development)"** with a green dot within a couple seconds.
 - If it reads "Backend unreachable" (red dot), confirm the backend terminal is still running on port 8000 and that `frontend/.env`'s `VITE_API_URL` matches it.
 
-## Verifying the Day 3 & Day 4 flows
+## Verifying the Day 3, 4 & 5 flows
 
 **Without Supabase configured** — run the automated smoke tests, which fake the two
 Supabase Storage calls where needed and check the real route/model code:
@@ -141,8 +156,9 @@ Supabase Storage calls where needed and check the real route/model code:
 cd backend && source .venv/bin/activate
 python3 scripts/dev_smoke_test.py         # Day 3: upload flow — 14 checks
 python3 scripts/dev_smoke_test_day4.py    # Day 4: folders & file ops — 33 checks
+python3 scripts/dev_smoke_test_day5.py    # Day 5: sharing & permissions — 40 checks
 ```
-Both should end with `All checks passed.`
+All three should end with `All checks passed.`
 
 **Against your real Supabase project** — once `backend/.env` has real credentials and
 the tables exist (see setup steps above), start the backend and run this from another
@@ -182,8 +198,9 @@ curl -s http://localhost:8000/files/<file_id> -H "X-User-Id: $USER_ID"
 Step 4's `download_url` should be a real, fetchable Supabase URL — opening it in a
 browser should download the file you uploaded.
 
-## Next up (Day 5)
+## Next up (Day 6)
 
-Sharing & Permissions: role-based access control (owner/editor/viewer), share a
-file/folder with another user, and public shareable links. Not started yet —
-waiting on your confirmation of Day 4.
+Search, Trash & Optimization: search API (name-based, type-based), full Trash
+implementation (list trashed items, restore, permanent delete, and cascading soft
+delete for folders), and DB indexes for performance. Not started yet — waiting on
+your confirmation of Day 5.

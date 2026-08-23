@@ -24,6 +24,7 @@ from sqlalchemy.pool import StaticPool
 from app.core.database import Base, get_db
 from app.models.file import File
 from app.models.folder import Folder
+from app.models.share import Share
 from app.models.user import User
 from app.services import storage_service
 import app.main as main_module
@@ -37,7 +38,7 @@ engine = create_engine(
     connect_args={"check_same_thread": False},
     poolclass=StaticPool,
 )
-Base.metadata.create_all(engine, tables=[User.__table__, Folder.__table__, File.__table__])
+Base.metadata.create_all(engine, tables=[User.__table__, Folder.__table__, File.__table__, Share.__table__])
 TestSession = sessionmaker(bind=engine)
 
 
