@@ -4,6 +4,17 @@ Google Drive–style file storage & sharing app. Stack: **React + Vite + Tailwin
 (frontend, starts Day 8), **FastAPI** (backend), **Supabase Postgres** (database),
 **Supabase Storage** (files). Built against the 14-day plan in the project spec.
 
+## Day 2 status — Frontend Setup & Backend Connection ✅
+
+- [x] React + Vite + Tailwind CSS frontend scaffolded in `frontend/`
+- [x] Project structure per spec section 11 (`components/`, `pages/`, `services/`, `hooks/`, `styles/`)
+- [x] App shell: sidebar (My Drive / Shared / Starred / Trash), header, breadcrumb, empty states — no advanced features yet
+- [x] Axios client (`src/services/api.js`) reads backend URL from `VITE_API_URL`
+- [x] Live connection badge in the header, backed by a React Query hook hitting the backend's `/health` endpoint
+- [x] Verified: production build passes, lint passes (0 warnings), backend `/health` reachable from the frontend with CORS confirmed working (preflight + actual GET)
+
+Backend was not modified this step — only read from. No auth, no file upload, no real data yet; those come on their scheduled days.
+
 ## Day 1 status — Requirement Analysis & Database Design ✅
 
 - [x] Feature scope reviewed, MVP vs Phase 2 finalized (see spec)
@@ -35,6 +46,17 @@ backend/
 └── .env.example
 docs/
 └── ER_DIAGRAM.md        # Mermaid ER diagram + design notes
+frontend/
+├── src/
+│   ├── main.jsx           # React root: QueryClientProvider + BrowserRouter
+│   ├── App.jsx             # Route table
+│   ├── index.css            # Tailwind entry point
+│   ├── components/           # Layout, Sidebar, Header, Breadcrumb, EmptyState, ConnectionStatus
+│   ├── pages/                  # Dashboard (My Drive), Shared, Starred, Trash — all placeholders
+│   ├── services/                 # api.js (Axios client), health.js
+│   └── hooks/                      # useHealth.js (React Query)
+├── vite.config.js
+└── .env.example
 ```
 
 ## Setting up Supabase (Day 1)
@@ -48,23 +70,37 @@ docs/
 4. **Storage**: create a bucket named `files` (matches `SUPABASE_STORAGE_BUCKET` in
    `.env`) — this is wired up for real on Day 3.
 5. Tables are not created yet — that happens once Alembic migrations are added
-   (Day 2), so the models are reviewed/confirmed first.
+   (Day 2 backend work, not yet done), so the models are reviewed/confirmed first.
 
-## Running the backend locally
+## Running everything locally
 
+Two terminals — backend first, then frontend.
+
+**Terminal 1 — backend**
 ```bash
 cd backend
-python3 -m venv .venv && source .venv/bin/activate
+python3 -m venv .venv
+source .venv/bin/activate        # Windows: .venv\Scripts\activate
 pip install -r requirements.txt
-cp .env.example .env   # then fill in your Supabase values
+cp .env.example .env             # fill in your Supabase values (optional for Day 1/2 — app boots without them)
 uvicorn app.main:app --reload
 ```
+Verify: open `http://localhost:8000/health` → `{"status": "healthy", "env": "development"}`.
 
-Visit `http://localhost:8000/health` → `{"status": "healthy", "env": "development"}`.
-Visit `http://localhost:8000/docs` for the (currently empty) auto-generated API docs.
+**Terminal 2 — frontend**
+```bash
+cd frontend
+npm install
+cp .env.example .env             # defaults to http://localhost:8000, matches the backend above
+npm run dev
+```
+Verify: open `http://localhost:5173` in a browser.
+- You should see the "My Drive" sidebar layout with empty states.
+- Top-right badge should read **"Backend connected (development)"** with a green dot within a couple seconds.
+- If it reads "Backend unreachable" (red dot), confirm the backend terminal is still running on port 8000 and that `frontend/.env`'s `VITE_API_URL` matches it.
 
-## Next up (Day 2)
+## Next up (Day 3)
 
-Backend setup & authentication: Alembic migrations to actually create the tables in
-Supabase, user registration/login, password hashing, JWT access + refresh tokens,
-and auth middleware. Not started yet — waiting on your confirmation of Day 1.
+File Upload & Object Storage: configure the Supabase Storage bucket for real, implement
+the init-upload / signed-URL / complete-upload flow on the backend, save file metadata
+in the DB. Not started yet — waiting on your confirmation of Day 2.
