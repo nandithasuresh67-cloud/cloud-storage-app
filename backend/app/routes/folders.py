@@ -1,5 +1,4 @@
 import uuid
-from datetime import datetime
 from typing import Optional
 
 from fastapi import APIRouter, Depends, HTTPException, Query, status
@@ -10,7 +9,7 @@ from app.core.deps import get_current_user_id
 from app.models.file import File
 from app.models.folder import Folder
 from app.schemas.folder import FolderContents, FolderCreateRequest, FolderOut, FolderUpdateRequest
-from app.services import folder_service
+from app.services import folder_service, trash_service
 from app.services.permissions import Role, require_folder_access
 
 router = APIRouter(prefix="/folders", tags=["folders"])
@@ -121,15 +120,12 @@ def delete_folder(
     user_id: uuid.UUID = Depends(get_current_user_id),
 ):
     """
-    Soft delete only - flips is_trashed on this folder. Requires EDITOR+
-    access. Does NOT cascade to child files/folders yet; recursive
-    trash/restore semantics are a Day 6 (Trash & Restore) feature. For now
-    a trashed folder's children remain is_trashed=False and would still
-    show up if fetched directly by id.
+    Soft delete, cascading to every subfolder and file underneath. Requires
+    EDITOR+ access. See app/services/trash_service.py for the cascade
+    logic and its restore-ordering limitation. Permanent deletion lives
+    under /trash.
     """
     folder = require_folder_access(db, folder_id, user_id, Role.EDITOR)
     if not folder.is_trashed:
-        folder.is_trashed = True
-        folder.trashed_at = datetime.utcnow()
-        db.commit()
+        trash_service.trash_folder_cascade(db, folder)
     return None

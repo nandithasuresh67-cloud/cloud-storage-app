@@ -1,7 +1,7 @@
 import uuid
 from datetime import datetime
 
-from sqlalchemy import Boolean, Column, DateTime, ForeignKey, String
+from sqlalchemy import Boolean, Column, DateTime, ForeignKey, Index, String, func
 from sqlalchemy.dialects.postgresql import UUID
 from sqlalchemy.orm import relationship
 
@@ -10,6 +10,10 @@ from app.core.database import Base
 
 class Folder(Base):
     __tablename__ = "folders"
+    __table_args__ = (
+        Index("ix_folders_owner_parent_trashed", "owner_id", "parent_id", "is_trashed"),
+        Index("ix_folders_owner_trashed", "owner_id", "is_trashed"),
+    )
 
     id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
     name = Column(String, nullable=False)
@@ -21,3 +25,6 @@ class Folder(Base):
     updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow, nullable=False)
 
     children = relationship("Folder", backref="parent", remote_side=[id])
+
+
+Index("ix_folders_name_lower", func.lower(Folder.name))

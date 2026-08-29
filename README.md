@@ -4,6 +4,17 @@ Google Drive–style file storage & sharing app. Stack: **React + Vite + Tailwin
 (frontend, starts Day 8), **FastAPI** (backend), **Supabase Postgres** (database),
 **Supabase Storage** (files). Built against the 14-day plan in the project spec.
 
+## Day 6 status — Search, Trash & Optimization ✅
+
+- [x] **Search API**: `GET /search?q=<name>&item_type=file|folder&mime_type=<prefix>` — case-insensitive name substring match, optionally narrowed to files-only/folders-only and by mime-type prefix (e.g. `image/`). Scoped to items you own plus items directly shared with you; excludes trash.
+- [x] **Trash**: `GET /trash` (lists only the *roots* of what you trashed — not each cascaded child separately), `POST /trash/{files,folders}/{id}/restore`, `DELETE /trash/{files,folders}/{id}` (permanent — requires the item to already be in the trash first, as a deliberate second step)
+- [x] **Cascading soft delete for folders** — trashing a folder now recurses into every subfolder and file underneath it (this was flagged as a known gap back on Day 4; closed here). Restore and permanent delete cascade the same way, including actually removing each file's object from Supabase Storage during permanent delete.
+- [x] **DB indexes for performance** — composite indexes on `(owner_id, folder_id, is_trashed)` and `(owner_id, is_trashed)` for files and folders (covers folder-contents listing and trash listing, the two most frequent query shapes), plus expression indexes on `lower(name)` for case-insensitive search without a full table scan, plus an index on `files.mime_type` for the type filter.
+
+⚠️ **Two scoping limitations, both flagged rather than silently glossed over:**
+- Restoring a folder restores *all* of its descendants, even ones that were individually trashed before the folder itself was. Tracking that precisely would need per-item "trash batch" bookkeeping beyond what a Day 6 MVP needs.
+- Search only covers items you own or that were *directly* shared with you — it does not recurse into the contents of folders you have cascading access to via a parent share. Once you open such a folder (`GET /folders/contents`), the usual cascading permission check takes over as normal; search itself just doesn't walk every shared subtree on every keystroke.
+
 ## Day 5 status — Sharing & Permissions ✅
 
 - [x] Role-based access control: **Owner** (full control), **Editor** (upload/rename/move/delete), **Viewer** (read-only), **Public User** (access via link) — implemented as a ranked enum in `app/services/permissions.py`
@@ -148,7 +159,7 @@ Verify: open `http://localhost:5173` in a browser.
 - Top-right badge should read **"Backend connected (development)"** with a green dot within a couple seconds.
 - If it reads "Backend unreachable" (red dot), confirm the backend terminal is still running on port 8000 and that `frontend/.env`'s `VITE_API_URL` matches it.
 
-## Verifying the Day 3, 4 & 5 flows
+## Verifying the Day 3, 4, 5 & 6 flows
 
 **Without Supabase configured** — run the automated smoke tests, which fake the two
 Supabase Storage calls where needed and check the real route/model code:
@@ -157,8 +168,9 @@ cd backend && source .venv/bin/activate
 python3 scripts/dev_smoke_test.py         # Day 3: upload flow — 14 checks
 python3 scripts/dev_smoke_test_day4.py    # Day 4: folders & file ops — 33 checks
 python3 scripts/dev_smoke_test_day5.py    # Day 5: sharing & permissions — 40 checks
+python3 scripts/dev_smoke_test_day6.py    # Day 6: search & trash — 33 checks
 ```
-All three should end with `All checks passed.`
+All four should end with `All checks passed.`
 
 **Against your real Supabase project** — once `backend/.env` has real credentials and
 the tables exist (see setup steps above), start the backend and run this from another
@@ -198,9 +210,8 @@ curl -s http://localhost:8000/files/<file_id> -H "X-User-Id: $USER_ID"
 Step 4's `download_url` should be a real, fetchable Supabase URL — opening it in a
 browser should download the file you uploaded.
 
-## Next up (Day 6)
+## Next up (Day 7)
 
-Search, Trash & Optimization: search API (name-based, type-based), full Trash
-implementation (list trashed items, restore, permanent delete, and cascading soft
-delete for folders), and DB indexes for performance. Not started yet — waiting on
-your confirmation of Day 5.
+Testing & Backend Deployment: broader automated test coverage, and deploying the
+backend (Render/Railway per the spec). Not started yet — waiting on your
+confirmation of Day 6.

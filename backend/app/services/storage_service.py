@@ -55,3 +55,18 @@ def create_signed_download_url(bucket: str, path: str, expires_in: int) -> str:
         )
     result = supabase.storage.from_(bucket).create_signed_url(path, expires_in)
     return result["signedURL"]
+
+
+def remove_object(bucket: str, path: str) -> None:
+    """
+    Permanently deletes an object from storage. Used only by permanent
+    delete (DELETE /trash/files/{id}) - regular soft delete never touches
+    storage, only the is_trashed flag.
+    """
+    supabase = get_supabase()
+    if supabase is None:
+        raise StorageNotConfiguredError(
+            "Supabase is not configured. Set SUPABASE_URL and "
+            "SUPABASE_SERVICE_ROLE_KEY in backend/.env."
+        )
+    supabase.storage.from_(bucket).remove([path])
