@@ -1,0 +1,29 @@
+services:
+  - type: web
+    name: cloud-storage-backend
+    runtime: docker
+    dockerfilePath: ./backend/Dockerfile
+    dockerContext: ./backend
+    plan: free
+    healthCheckPath: /health
+    envVars:
+      - key: ENV
+        value: production
+      - key: SUPABASE_URL
+        sync: false
+      - key: SUPABASE_ANON_KEY
+        sync: false
+      - key: SUPABASE_SERVICE_ROLE_KEY
+        sync: false
+      - key: SUPABASE_STORAGE_BUCKET
+        value: files
+      - key: DATABASE_URL
+        sync: false
+      - key: JWT_SECRET_KEY
+        generateValue: true
+      - key: CORS_ORIGINS
+        value: '["https://YOUR-FRONTEND-DOMAIN"]'
+      - key: MAX_UPLOAD_SIZE_MB
+        value: "100"
+    # Render sets $PORT automatically - the Dockerfile's CMD reads it, no
+    # PORT entry needed here.

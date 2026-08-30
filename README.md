@@ -4,6 +4,14 @@ Google Drive–style file storage & sharing app. Stack: **React + Vite + Tailwin
 (frontend, starts Day 8), **FastAPI** (backend), **Supabase Postgres** (database),
 **Supabase Storage** (files). Built against the 14-day plan in the project spec.
 
+## Day 7 status — Testing & Backend Deployment ⚠️ (mostly complete — deployment itself not executed)
+
+- [x] **Automated unit tests (pytest)** — `backend/tests/` — 66 tests across 4 files, using proper pytest fixtures (fresh in-memory DB per test, mocked Supabase Storage) instead of the sequential manual scripts from Days 3–6. Run with `pytest` from `backend/`.
+- [x] **API testing via Postman** — `backend/postman_collection.json` (generated from the live OpenAPI spec, one request per endpoint with example bodies) + `backend/postman_environment.json` (sets `baseUrl` and the temporary `X-User-Id` auth header as variables). Regenerate anytime with `python3 scripts/export_postman_collection.py` after adding new endpoints.
+- [x] **Environment variable setup** — `backend/app/core/startup_checks.py` actively validates config at boot: in development it just logs warnings for anything missing; in `ENV=production` it **refuses to start** (exit code 1) if `JWT_SECRET_KEY` is still the default, or if Supabase/database credentials are missing. This is a real fail-fast check, not just a documented list of variable names.
+- [x] **Deployment artifacts prepared**: `backend/Dockerfile` (verified: dependencies actually install cleanly in a fresh venv; confirmed `psycopg2-binary` needs no extra system packages by testing the import directly rather than assuming), `render.yaml` (Render Blueprint), `fly.toml` (Fly.io alternative) — both read `$PORT` correctly for their respective platforms.
+- [ ] **Actual live deployment** — **not done**. I don't have Render/Fly.io accounts, and this sandbox's network egress doesn't reach either platform's API even if I did (see the Network Configuration notice — only pypi/npm/github-style domains are reachable here). What's here is everything needed to deploy in one pass yourself; see "Deploying the backend" below for exact steps. I could not build or run the Docker image either (no `docker` binary in this sandbox) — I verified its dependency-install logic against the real venv instead, which is the closest verification available here.
+
 ## Day 6 status — Search, Trash & Optimization ✅
 
 - [x] **Search API**: `GET /search?q=<name>&item_type=file|folder&mime_type=<prefix>` — case-insensitive name substring match, optionally narrowed to files-only/folders-only and by mime-type prefix (e.g. `image/`). Scoped to items you own plus items directly shared with you; excludes trash.
@@ -159,7 +167,91 @@ Verify: open `http://localhost:5173` in a browser.
 - Top-right badge should read **"Backend connected (development)"** with a green dot within a couple seconds.
 - If it reads "Backend unreachable" (red dot), confirm the backend terminal is still running on port 8000 and that `frontend/.env`'s `VITE_API_URL` matches it.
 
-## Verifying the Day 3, 4, 5 & 6 flows
+## Running the automated test suite (Day 7)
+
+```bash
+cd backend && source .venv/bin/activate
+pip install -r requirements-dev.txt   # adds pytest on top of requirements.txt
+pytest                                 # 66 tests, ~2-3 seconds, no network/Supabase needed
+pytest -v                              # same, with each test name printed
+```
+Every test uses a fresh in-memory database and a mocked Supabase Storage client (see
+`backend/tests/conftest.py`), so this never touches your real `.env` or Supabase project
+— safe to run anytime, including in CI.
+
+## Testing the API with Postman
+
+1. Open Postman → **Import** → select `backend/postman_collection.json` and
+   `backend/postman_environment.json`.
+2. Select the **"Cloud Storage - Local"** environment (top-right dropdown).
+3. Start the backend (`uvicorn app.main:app --reload`), then create a user row (see
+   "Setting up Supabase" step 5 above, or use the one-liner in the Day 5 verification
+   section below) and paste its id into the environment's `userId` variable — real
+   auth isn't built yet, so every request authenticates via the temporary `X-User-Id`
+   header (see `app/core/deps.py`).
+4. Run any request. To regenerate the collection after adding new endpoints:
+   ```bash
+   cd backend && source .venv/bin/activate
+   npm install -g openapi-to-postmanv2   # one-time
+   uvicorn app.main:app --reload &        # needs to be running
+   python3 scripts/export_postman_collection.py
+   ```
+
+## Deploying the backend
+
+Two deployment configs are included — pick one. **I have not actually deployed
+either of these** (no hosting accounts, and this sandbox's network egress doesn't
+reach Render's or Fly.io's APIs regardless — see the Network Configuration notice).
+What's here is everything needed to deploy in one pass; the steps below are exact,
+not a sketch.
+
+**Option A — Render** (`render.yaml` at the repo root):
+1. Push this repo to GitHub.
+2. Render dashboard → New → **Blueprint** → connect the repo. Render reads
+   `render.yaml` automatically and creates the service.
+3. Fill in the secrets Render will prompt for (marked `sync: false` in `render.yaml`):
+   `SUPABASE_URL`, `SUPABASE_ANON_KEY`, `SUPABASE_SERVICE_ROLE_KEY`, `DATABASE_URL`.
+   `JWT_SECRET_KEY` is auto-generated by Render; `CORS_ORIGINS` defaults to a
+   placeholder you should replace with your real frontend URL once it's deployed
+   (Day 8+).
+4. Deploy. Render builds `backend/Dockerfile` and health-checks `/health`.
+5. **Before this is actually usable**: run the table-creation one-liner from
+   "Setting up Supabase" step 5 above, pointed at your production `DATABASE_URL`
+   (Alembic migrations don't exist yet — this is the same manual step as local dev).
+
+**Option B — Fly.io** (`fly.toml` at the repo root):
+```bash
+# one-time
+curl -L https://fly.io/install.sh | sh
+fly auth login
+
+fly launch --config fly.toml --no-deploy   # reads fly.toml, skips auto-deploy so secrets can be set first
+fly secrets set \
+  SUPABASE_URL=https://YOUR_PROJECT.supabase.co \
+  SUPABASE_ANON_KEY=... \
+  SUPABASE_SERVICE_ROLE_KEY=... \
+  DATABASE_URL=postgresql+psycopg2://... \
+  JWT_SECRET_KEY=$(openssl rand -hex 32) \
+  CORS_ORIGINS='["https://your-frontend-domain"]'
+fly deploy
+```
+Then run the same table-creation one-liner against production `DATABASE_URL` before
+expecting real traffic to work.
+
+**Either way**, confirm it's live with:
+```bash
+curl https://your-app.onrender.com/health     # or your Fly.io URL
+# -> {"status": "healthy", "env": "production"}
+```
+If it instead fails to boot at all, check the platform's logs first — `app/core/startup_checks.py`
+will refuse to start (and say exactly why) if `JWT_SECRET_KEY`, Supabase credentials, or
+`DATABASE_URL` are missing in production, rather than booting into a broken state silently.
+
+## Verifying the Day 3, 4, 5 & 6 flows (manual scenario scripts)
+
+These predate the Day 7 pytest suite above and are kept because they're useful for a
+human to read through one continuous scenario end-to-end, rather than dozens of
+independent test functions.
 
 **Without Supabase configured** — run the automated smoke tests, which fake the two
 Supabase Storage calls where needed and check the real route/model code:
@@ -210,8 +302,9 @@ curl -s http://localhost:8000/files/<file_id> -H "X-User-Id: $USER_ID"
 Step 4's `download_url` should be a real, fetchable Supabase URL — opening it in a
 browser should download the file you uploaded.
 
-## Next up (Day 7)
+## Next up (Day 8 — start of Week 2: Frontend)
 
-Testing & Backend Deployment: broader automated test coverage, and deploying the
-backend (Render/Railway per the spec). Not started yet — waiting on your
-confirmation of Day 6.
+Frontend Setup & Auth UI: this is also where real authentication (register/login,
+replacing the temporary `X-User-Id` header everywhere) needs to land, since the
+spec's Week 2 frontend work assumes it exists. Not started yet — waiting on your
+confirmation of Day 7.

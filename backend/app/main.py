@@ -2,9 +2,11 @@ from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
 from app.core.config import get_settings
+from app.core.startup_checks import check_environment
 from app.routes import files, folders, public_links, search, shares, trash
 
 settings = get_settings()
+check_environment(settings)
 
 app = FastAPI(title=settings.APP_NAME)
 

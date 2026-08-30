@@ -1,0 +1,4 @@
+# Dev/test-only dependencies. Install alongside requirements.txt for local
+# development and CI; not needed in a production deployment.
+-r requirements.txt
+pytest==8.3.3
