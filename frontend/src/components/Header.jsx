@@ -1,5 +1,6 @@
 import { Search } from "lucide-react";
 import ConnectionStatus from "./ConnectionStatus";
+import UserMenu from "./UserMenu";
 
 export default function Header() {
   return (
@@ -13,7 +14,10 @@ export default function Header() {
           disabled
         />
       </div>
-      <ConnectionStatus />
+      <div className="flex items-center gap-3">
+        <ConnectionStatus />
+        <UserMenu />
+      </div>
     </header>
   );
 }

@@ -4,6 +4,60 @@ Google Drive–style file storage & sharing app. Stack: **React + Vite + Tailwin
 (frontend, starts Day 8), **FastAPI** (backend), **Supabase Postgres** (database),
 **Supabase Storage** (files). Built against the 14-day plan in the project spec.
 
+## Day 8 status — Frontend Setup & Auth UI ✅ (also: real backend auth finally built)
+
+This day did double duty. The spec's Day 8 assumes backend auth already exists —
+it was supposed to land on the original "Day 2" backend slot, before this project's
+day-by-day requests reordered the frontend ahead of it. That gap has been called out
+in every day's README section since (`X-User-Id` header, no real login). It gets
+closed here, since Day 8's frontend work has nothing real to integrate with otherwise.
+
+**Backend — real JWT auth, replacing the temporary header:**
+- `POST /auth/register`, `POST /auth/login`, `POST /auth/refresh`, `POST /auth/logout`, `GET /auth/me`
+- **HttpOnly cookies**, not a token in the response body — JavaScript can never read
+  them, so an XSS bug in the frontend can't just read a token out of `localStorage`
+  and exfiltrate it. Access token cookie is scoped `path=/`; refresh token cookie is
+  scoped `path=/auth/refresh` only, so it isn't sent on every ordinary request.
+- Same error message for "no such email" and "wrong password" on login — doesn't let
+  an attacker enumerate which emails have accounts.
+- Passwords never appear in any response body (checked explicitly in tests, not just assumed).
+- The old `X-User-Id` header still works, **but only when `ENV != "production"`** —
+  kept so the 66 existing Day 3–7 tests and the Postman collection didn't need
+  rewriting, but hard-blocked (not just discouraged) outside development. Verified
+  directly: flipping `ENV` to `"production"` mid-test causes the header to be
+  rejected with `401`, not silently ignored.
+
+**Frontend — Login & Signup pages:**
+- `pages/Login.jsx`, `pages/Signup.jsx` — plain email/password forms, no
+  token-handling code needed at all on the frontend, since cookies are set and sent
+  automatically by the browser once `api.js`'s `withCredentials: true` (already set
+  back on Day 2) is in place.
+- `ProtectedRoute` — redirects to `/login` if `GET /auth/me` fails; `GuestRoute` —
+  redirects logged-in users away from `/login`/`/signup` back to the dashboard.
+- `UserMenu` in the header — shows the logged-in user's name/email and a working
+  logout button.
+
+**Tested, not assumed — including a real bug found along the way:**
+- 15 new pytest tests (`tests/test_auth.py`): register/login/logout/refresh,
+  wrong-password and duplicate-email rejection, `/auth/me` requiring auth, a
+  protected endpoint (`POST /folders`) actually working off the session cookie (not
+  just `/auth/me`), two independent login sessions not leaking into each other, and
+  the production lockout of the dev header fallback.
+- While converting, found that JWT `iat` has only 1-second resolution — a
+  register-then-immediately-refresh within the same test produced byte-identical
+  tokens, making "rotation" undetectable. Fixed by adding a random `jti` claim to
+  every token, not just noted and left as a quirk.
+- **Full real end-to-end test**, not just the mocked pytest client: booted the real
+  backend against a real local SQLite database and the real Vite dev server
+  together, then drove the actual HTTP flow with `curl` using real `Origin` headers
+  and a real cookie jar — CORS preflight, register, `/auth/me`, and creating a real
+  folder off the session cookie all confirmed working exactly as a browser would do it.
+- Frontend: clean `npm run build`, clean `oxlint`, and confirmed every new file
+  (`Login.jsx`, `Signup.jsx`, `useAuth.js`, `auth.js`, `UserMenu.jsx`, etc.) is served
+  correctly by the dev server with no 404s.
+- All 81 backend tests (66 existing + 15 new) and all 4 manual smoke-test scripts
+  still pass — the auth rework caused zero regressions.
+
 ## Day 7 status — Testing & Backend Deployment ⚠️ (mostly complete — deployment itself not executed)
 
 - [x] **Automated unit tests (pytest)** — `backend/tests/` — 66 tests across 4 files, using proper pytest fixtures (fresh in-memory DB per test, mocked Supabase Storage) instead of the sequential manual scripts from Days 3–6. Run with `pytest` from `backend/`.
@@ -142,7 +196,9 @@ frontend/
 
 ## Running everything locally
 
-Two terminals — backend first, then frontend.
+Two terminals — backend first, then frontend. **As of Day 8, you need a real
+database** — auth (register/login) writes to the `users` table, so unlike Days 1–2
+the backend can boot without one but nothing useful works until it's connected.
 
 **Terminal 1 — backend**
 ```bash
@@ -150,10 +206,33 @@ cd backend
 python3 -m venv .venv
 source .venv/bin/activate        # Windows: .venv\Scripts\activate
 pip install -r requirements.txt
-cp .env.example .env             # fill in your Supabase values — required for Day 3 uploads to work
+cp .env.example .env             # fill in your Supabase values (or point DATABASE_URL at local Postgres/SQLite for a quick try)
 uvicorn app.main:app --reload
 ```
 Verify: open `http://localhost:8000/health` → `{"status": "healthy", "env": "development"}`.
+
+**Don't have Supabase set up yet?** For a quick local try without any of that, point
+`DATABASE_URL` at a local SQLite file instead (this is exactly what I used to verify
+Day 8 end-to-end):
+```bash
+# instead of the Supabase DATABASE_URL in .env, use:
+echo 'DATABASE_URL=sqlite:///./dev.db' >> .env
+echo 'JWT_SECRET_KEY=some-random-dev-string' >> .env
+python3 -c "
+from sqlalchemy import create_engine
+from app.core.database import Base
+from app.models.user import User
+from app.models.folder import Folder
+from app.models.file import File
+from app.models.share import Share
+from app.models.link_share import LinkShare
+engine = create_engine('sqlite:///./dev.db')
+Base.metadata.create_all(engine, tables=[User.__table__, Folder.__table__, File.__table__, Share.__table__, LinkShare.__table__])
+print('tables created')
+"
+```
+File upload/storage endpoints will still 502 without real Supabase Storage credentials,
+but auth, folders, sharing, search, and trash all work fully against SQLite.
 
 **Terminal 2 — frontend**
 ```bash
@@ -163,16 +242,31 @@ cp .env.example .env             # defaults to http://localhost:8000, matches th
 npm run dev
 ```
 Verify: open `http://localhost:5173` in a browser.
-- You should see the "My Drive" sidebar layout with empty states.
-- Top-right badge should read **"Backend connected (development)"** with a green dot within a couple seconds.
-- If it reads "Backend unreachable" (red dot), confirm the backend terminal is still running on port 8000 and that `frontend/.env`'s `VITE_API_URL` matches it.
+- You should be redirected to **`/login`** automatically now (this is new as of Day 8 — the app requires auth).
+- Top-right of the login page should show the app name; the connection badge lives inside the app shell, so you won't see it until after logging in.
 
-## Running the automated test suite (Day 7)
+## Trying the login flow (Day 8)
+
+1. On `/login`, click **"Sign up"**.
+2. Fill in email + a password (8+ characters) → **Sign up**.
+3. You should land on the dashboard (`/`), with a colored circle top-right showing
+   your initials — click it to see your email and a **Log out** button.
+4. Click **Log out** → you should be sent back to `/login`.
+5. Log back in with the same email/password → back on the dashboard again.
+6. Try visiting `http://localhost:5173/` directly while logged out (e.g. after
+   logging out, or in a fresh incognito window) — you should be redirected to
+   `/login` automatically, not shown a broken or empty dashboard.
+
+If step 2 fails with a network error rather than a validation message, the most
+likely cause is `DATABASE_URL` not being set/reachable — check the backend
+terminal's logs.
+
+## Running the automated test suite (Day 7 & 8)
 
 ```bash
 cd backend && source .venv/bin/activate
 pip install -r requirements-dev.txt   # adds pytest on top of requirements.txt
-pytest                                 # 66 tests, ~2-3 seconds, no network/Supabase needed
+pytest                                 # 81 tests, ~5-7 seconds, no network/Supabase needed
 pytest -v                              # same, with each test name printed
 ```
 Every test uses a fresh in-memory database and a mocked Supabase Storage client (see
@@ -302,9 +396,11 @@ curl -s http://localhost:8000/files/<file_id> -H "X-User-Id: $USER_ID"
 Step 4's `download_url` should be a real, fetchable Supabase URL — opening it in a
 browser should download the file you uploaded.
 
-## Next up (Day 8 — start of Week 2: Frontend)
+## Next up (Day 9)
 
-Frontend Setup & Auth UI: this is also where real authentication (register/login,
-replacing the temporary `X-User-Id` header everywhere) needs to land, since the
-spec's Week 2 frontend work assumes it exists. Not started yet — waiting on your
-confirmation of Day 7.
+Dashboard & File Listing UI: build the actual Google Drive-like file/folder browser,
+wired to the real backend APIs from Days 3, 4, and 6 (list, upload, create folder,
+breadcrumb navigation) — the frontend pages built on Days 2 and 8 are currently just
+a shell (login works, but My Drive/Shared/Starred/Trash still show static empty
+states regardless of what's really in the database). Not started yet — waiting on
+your confirmation of Day 8.

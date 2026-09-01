@@ -3,7 +3,7 @@ from fastapi.middleware.cors import CORSMiddleware
 
 from app.core.config import get_settings
 from app.core.startup_checks import check_environment
-from app.routes import files, folders, public_links, search, shares, trash
+from app.routes import auth, files, folders, public_links, search, shares, trash
 
 settings = get_settings()
 check_environment(settings)
@@ -18,6 +18,7 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
+app.include_router(auth.router)
 app.include_router(files.router)
 app.include_router(folders.router)
 app.include_router(shares.router)
