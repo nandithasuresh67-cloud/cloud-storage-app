@@ -68,9 +68,11 @@ def main():
     collection["info"]["description"] = (
         "Cloud Storage Service API - Postman collection generated from the live "
         "OpenAPI spec.\n\nImport the companion postman_environment.json alongside "
-        "this collection, then set `userId` to a real user UUID from your "
-        "database (auth isn't built yet - see app/core/deps.py - so every "
-        "request authenticates via the X-User-Id header instead of a token)."
+        "this collection. Preferred: call POST /auth/register or /auth/login first "
+        "- Postman will store the resulting HttpOnly session cookies automatically "
+        "and every subsequent request will be authenticated with no extra setup. "
+        "The `userId` variable / X-User-Id header is a dev-only fallback (see "
+        "app/core/deps.py) that only works when the backend's ENV != 'production'."
     )
 
     COLLECTION_PATH.write_text(json.dumps(collection, indent=2))
