@@ -4,6 +4,47 @@ Google Drive–style file storage & sharing app. Stack: **React + Vite + Tailwin
 (frontend, starts Day 8), **FastAPI** (backend), **Supabase Postgres** (database),
 **Supabase Storage** (files). Built against the 14-day plan in the project spec.
 
+## Day 10 status — File Upload & Preview UI ✅
+
+Upload is now a real, working feature — not a disabled button.
+
+- [x] **Drag & drop upload** (`react-dropzone`) — drag files anywhere over the file
+  list to upload them into the current folder; a dashed-border overlay confirms the
+  drop target while dragging.
+- [x] **Click-to-browse Upload button** — now enabled, opens the native file picker
+  via the same `react-dropzone` instance (`noClick: true` + a manual `open()` call),
+  so both interaction paths share one upload pipeline instead of two.
+- [x] **Upload progress indicator** — `UploadProgressPanel`, fixed bottom-right,
+  shows every in-flight upload independently (queued → uploading with a real
+  percentage bar from axios's `onUploadProgress` → finishing → done/error). One
+  file failing (oversized, blocked type) doesn't block or affect the others.
+- [x] **File preview** — clicking any fully-uploaded file opens `FilePreviewModal`:
+  inline `<img>` for images, an `<iframe>` for PDFs, and a clean "preview not
+  available, here's Download instead" fallback for everything else. Files still
+  mid-upload (`upload_status: "pending"`) are visually dimmed and explicitly can't
+  be opened, rather than opening into a broken preview.
+- [x] `useFileUpload` hook orchestrates the real 3-step flow per file: `POST
+  /files/init-upload` → `PUT` the raw bytes straight to the signed URL (Day 3's
+  design — bytes never pass through our backend) → `POST
+  /files/{id}/complete-upload`. Backend validation errors (413 oversized, 415
+  blocked type) surface as the exact per-file error message from the API, not a
+  generic "upload failed."
+
+**Tested for real, not assumed — this is the part worth reading closely:** this
+sandbox can't reach Supabase and has no headless browser, so neither "just trust the
+Supabase docs" nor "click through it in a real browser" were options. Instead: stood
+up a tiny local fake object-storage server, temporarily pointed the backend's
+storage layer at it (restored from git immediately after, `git diff` confirmed
+clean), and replayed the **exact HTTP sequence `useFileUpload.js` issues** with
+`curl` — `init-upload` → `PUT` real file bytes → `complete-upload` → `GET` the file
+→ fetch its `download_url` → **byte-for-byte diff against the original file**. Did
+this for both a text file and a real PNG image, confirming the upload round-trip is
+byte-perfect and that `<img src={download_url}>` will render the exact bytes that
+were uploaded. Also confirmed the 413/415 error responses match the exact shape the
+upload hook reads (`err.response.data.detail`). Separately: clean `npm run build`,
+clean `oxlint`, all new files served correctly by the dev server, and all 81 backend
+tests still pass against the real (restored) storage code.
+
 ## Day 9 status — Dashboard & File Listing UI ✅
 
 My Drive is now a real, working file browser instead of a static empty state.
@@ -414,10 +455,8 @@ curl -s http://localhost:8000/files/<file_id> -H "X-User-Id: $USER_ID"
 Step 4's `download_url` should be a real, fetchable Supabase URL — opening it in a
 browser should download the file you uploaded.
 
-## Next up (Day 10)
+## Next up (Day 11)
 
-File Upload & Preview UI: wire the real Upload button to the backend's init-upload /
-complete-upload flow (built Day 3) with drag-and-drop (React Dropzone), an upload
-progress indicator, and image/PDF preview. This is also what makes it possible to
-get a real file into the UI without going through Postman/curl. Not started yet —
-waiting on your confirmation of Day 9.
+Sharing UI & Permissions: a share modal (email + viewer/editor role, matching the
+Day 5 backend), a public-link generator, and a view of who a file/folder is already
+shared with. Not started yet — waiting on your confirmation of Day 10.

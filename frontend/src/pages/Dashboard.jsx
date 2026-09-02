@@ -1,20 +1,34 @@
 import { useState } from "react";
+import { useDropzone } from "react-dropzone";
 import { useNavigate, useParams } from "react-router-dom";
 import { AlertCircle, FolderOpen, FolderPlus, Loader2, UploadCloud } from "lucide-react";
 import Breadcrumb from "../components/Breadcrumb";
 import EmptyState from "../components/EmptyState";
+import FilePreviewModal from "../components/FilePreviewModal";
 import FileTypeIcon from "../components/FileTypeIcon";
 import NewFolderModal from "../components/NewFolderModal";
+import UploadProgressPanel from "../components/UploadProgressPanel";
 import { useCreateFolder, useFolderContents } from "../hooks/useFolderContents";
+import { useFileUpload } from "../hooks/useFileUpload";
 import { formatBytes, formatDate } from "../utils/format";
 
 export default function Dashboard() {
   const { folderId } = useParams();
   const navigate = useNavigate();
   const [showNewFolder, setShowNewFolder] = useState(false);
+  const [previewFileId, setPreviewFileId] = useState(null);
 
   const { data, isLoading, isError, error } = useFolderContents(folderId);
   const createFolderMutation = useCreateFolder(folderId);
+  const { uploads, startUpload, dismissUpload } = useFileUpload(folderId);
+
+  const { getRootProps, getInputProps, isDragActive, open } = useDropzone({
+    noClick: true,
+    noKeyboard: true,
+    onDrop: (acceptedFiles) => {
+      if (acceptedFiles.length > 0) startUpload(acceptedFiles);
+    },
+  });
 
   const breadcrumbItems = [
     { label: "My Drive", to: "/" },
@@ -25,10 +39,16 @@ export default function Dashboard() {
     createFolderMutation.mutate(name, { onSuccess: () => setShowNewFolder(false) });
   }
 
+  function handleFileRowClick(file) {
+    if (file.upload_status === "uploaded") setPreviewFileId(file.id);
+  }
+
   const isEmpty = data && data.subfolders.length === 0 && data.files.length === 0;
 
   return (
-    <div>
+    <div {...getRootProps()} className="relative min-h-full outline-none">
+      <input {...getInputProps()} />
+
       <Breadcrumb items={breadcrumbItems} />
 
       <div className="mb-6 flex items-center justify-between">
@@ -44,9 +64,8 @@ export default function Dashboard() {
             New folder
           </button>
           <button
-            disabled
-            className="flex items-center gap-2 rounded-lg bg-teal-700 px-4 py-2 text-sm font-medium text-white opacity-50"
-            title="Upload UI lands on Day 10 - the backend upload API already works (see the Postman collection)"
+            onClick={open}
+            className="flex items-center gap-2 rounded-lg bg-teal-700 px-4 py-2 text-sm font-medium text-white hover:bg-teal-800"
           >
             <UploadCloud className="h-4 w-4" strokeWidth={1.75} />
             Upload
@@ -72,7 +91,7 @@ export default function Dashboard() {
         <EmptyState
           icon={FolderOpen}
           title="No files yet"
-          description="Create a folder to get organized, or check back once file upload lands."
+          description="Drag and drop files here, or use Upload, to add your first file."
         />
       )}
 
@@ -102,7 +121,12 @@ export default function Dashboard() {
                 </tr>
               ))}
               {data.files.map((file) => (
-                <tr key={file.id} className="hover:bg-stone-50">
+                <tr
+                  key={file.id}
+                  onClick={() => handleFileRowClick(file)}
+                  className={file.upload_status === "uploaded" ? "cursor-pointer hover:bg-stone-50" : "opacity-70"}
+                  title={file.upload_status !== "uploaded" ? "Upload hasn't finished for this file yet" : undefined}
+                >
                   <td className="flex items-center gap-2.5 px-4 py-2.5 text-stone-800">
                     <FileTypeIcon mimeType={file.mime_type} className="h-4 w-4 shrink-0 text-stone-400" />
                     {file.name}
@@ -121,6 +145,12 @@ export default function Dashboard() {
         </div>
       )}
 
+      {isDragActive && (
+        <div className="pointer-events-none absolute inset-0 flex items-center justify-center rounded-xl border-2 border-dashed border-teal-600 bg-teal-50/80">
+          <p className="text-sm font-medium text-teal-800">Drop files to upload</p>
+        </div>
+      )}
+
       {showNewFolder && (
         <NewFolderModal
           onClose={() => setShowNewFolder(false)}
@@ -129,6 +159,10 @@ export default function Dashboard() {
           error={createFolderMutation.error?.response?.data?.detail}
         />
       )}
+
+      {previewFileId && <FilePreviewModal fileId={previewFileId} onClose={() => setPreviewFileId(null)} />}
+
+      <UploadProgressPanel uploads={uploads} onDismiss={dismissUpload} />
     </div>
   );
 }
