@@ -5,7 +5,7 @@ import EmptyState from "../components/EmptyState";
 export default function Trash() {
   return (
     <div>
-      <Breadcrumb path={["Trash"]} />
+      <Breadcrumb items={[{ label: "Trash" }]} />
       <h1 className="mb-6 text-lg font-medium text-stone-900">Trash</h1>
       <EmptyState
         icon={Trash2}

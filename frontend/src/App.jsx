@@ -36,6 +36,7 @@ export default function App() {
             <Layout>
               <Routes>
                 <Route path="/" element={<Dashboard />} />
+                <Route path="/folder/:folderId" element={<Dashboard />} />
                 <Route path="/shared" element={<Shared />} />
                 <Route path="/starred" element={<Starred />} />
                 <Route path="/trash" element={<Trash />} />

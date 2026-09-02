@@ -5,7 +5,7 @@ import EmptyState from "../components/EmptyState";
 export default function Shared() {
   return (
     <div>
-      <Breadcrumb path={["Shared with me"]} />
+      <Breadcrumb items={[{ label: "Shared with me" }]} />
       <h1 className="mb-6 text-lg font-medium text-stone-900">Shared with me</h1>
       <EmptyState
         icon={Users}

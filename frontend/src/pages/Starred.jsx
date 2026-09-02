@@ -5,7 +5,7 @@ import EmptyState from "../components/EmptyState";
 export default function Starred() {
   return (
     <div>
-      <Breadcrumb path={["Starred"]} />
+      <Breadcrumb items={[{ label: "Starred" }]} />
       <h1 className="mb-6 text-lg font-medium text-stone-900">Starred</h1>
       <EmptyState
         icon={Star}

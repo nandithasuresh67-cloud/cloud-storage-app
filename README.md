@@ -4,6 +4,24 @@ Google Drive–style file storage & sharing app. Stack: **React + Vite + Tailwin
 (frontend, starts Day 8), **FastAPI** (backend), **Supabase Postgres** (database),
 **Supabase Storage** (files). Built against the 14-day plan in the project spec.
 
+## Day 9 status — Dashboard & File Listing UI ✅
+
+My Drive is now a real, working file browser instead of a static empty state.
+
+- [x] **File & folder listing** — `pages/Dashboard.jsx` calls the real `GET /folders/contents` (built Day 4) via a new `useFolderContents` React Query hook. Subfolders and files render in a table with name, size, and last-modified date; files get a mime-type-aware icon (`FileTypeIcon`), folders are clickable to navigate in.
+- [x] **Breadcrumb navigation** — `Breadcrumb` was rebuilt to accept clickable `{label, to}` items instead of plain strings, fed by the real breadcrumb array the backend already computed (Day 4). Clicking any ancestor navigates straight there; nested folders use a new `/folder/:folderId` route, `/` renders the root.
+- [x] **New Folder** — a real, working button and modal (`NewFolderModal`), calling `POST /folders` (Day 4) via a `useCreateFolder` mutation, so the dashboard isn't just displaying pre-seeded data — you can actually build out a folder tree from the UI.
+- [x] Sidebar's "My Drive" link now correctly highlights active when viewing any nested folder, not just the exact root path.
+- [x] Loading state (spinner), error state (e.g. a deleted or no-longer-shared folder returns a real backend error message, not a generic failure), and empty state are all handled distinctly.
+
+**Scope note:** per the spec, Day 9 is listing + navigation only — Upload stays disabled (real button, clear tooltip) since drag-and-drop upload is explicitly Day 10. This does mean you can create and navigate folders end-to-end right now, but can't yet get a file to actually appear via the UI (the backend upload API has worked since Day 3 — see the Postman collection — there's just no UI button wired to it yet). **Shared / Starred / Trash pages are still the Day 2 static placeholders** — wiring those to their real backend data (Days 5 and 6) wasn't in Day 9's scope and hasn't happened yet; flagging this now so it isn't mistaken for missing/broken later. Let me know if you'd rather I pull Day 10's upload forward so you can test file listing with real files sooner, or continue day-by-day.
+
+**Tested, not assumed:**
+- Clean `npm run build` and `oxlint` (0 warnings) after the changes, and confirmed every new/changed file (`Dashboard.jsx`, `NewFolderModal.jsx`, `FileTypeIcon.jsx`, `Breadcrumb.jsx`, `Sidebar.jsx`, `useFolderContents.js`, `services/folders.js`, `utils/format.js`) serves with no 404s from the dev server.
+- **Full real end-to-end test**, not just a build check: booted the real backend (local SQLite) and real Vite dev server together, then drove the actual flow with `curl` using real `Origin`/cookie headers exactly as a browser would — registered, created a root folder, created a nested folder inside it, and confirmed `GET /folders/contents` returns exactly the shape `Dashboard.jsx` and `Breadcrumb.jsx` destructure (`folder`, `breadcrumb`, `subfolders`, `files`) at both the root and nested level.
+- Confirmed a `pending` (incomplete) upload renders its "upload incomplete" badge correctly, and that a 404 from a deleted/inaccessible folder returns a `detail` message in the exact shape the Dashboard's error state reads.
+- All 81 backend tests and all 4 smoke-test scripts still pass — nothing on the backend changed today, verified rather than assumed.
+
 ## Day 8 status — Frontend Setup & Auth UI ✅ (also: real backend auth finally built)
 
 This day did double duty. The spec's Day 8 assumes backend auth already exists —
@@ -396,11 +414,10 @@ curl -s http://localhost:8000/files/<file_id> -H "X-User-Id: $USER_ID"
 Step 4's `download_url` should be a real, fetchable Supabase URL — opening it in a
 browser should download the file you uploaded.
 
-## Next up (Day 9)
+## Next up (Day 10)
 
-Dashboard & File Listing UI: build the actual Google Drive-like file/folder browser,
-wired to the real backend APIs from Days 3, 4, and 6 (list, upload, create folder,
-breadcrumb navigation) — the frontend pages built on Days 2 and 8 are currently just
-a shell (login works, but My Drive/Shared/Starred/Trash still show static empty
-states regardless of what's really in the database). Not started yet — waiting on
-your confirmation of Day 8.
+File Upload & Preview UI: wire the real Upload button to the backend's init-upload /
+complete-upload flow (built Day 3) with drag-and-drop (React Dropzone), an upload
+progress indicator, and image/PDF preview. This is also what makes it possible to
+get a real file into the UI without going through Postman/curl. Not started yet —
+waiting on your confirmation of Day 9.
