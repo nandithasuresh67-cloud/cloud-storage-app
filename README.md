@@ -4,6 +4,22 @@ Google Drive–style file storage & sharing app. Stack: **React + Vite + Tailwin
 (frontend, starts Day 8), **FastAPI** (backend), **Supabase Postgres** (database),
 **Supabase Storage** (files). Built against the 14-day plan in the project spec.
 
+## Day 11 status — Sharing UI & Permissions ✅
+
+Sharing is now a real, working feature from the UI — not just an API.
+
+- [x] **Share modal** — click the share icon that appears on hover over any file/folder row, or "Share this folder" when inside one. Lets you invite by email with a **viewer/editor permission selector**, shows the list of people who currently have access with a revoke button, and manages a public link (create, copy, revoke, with password-protection support already surfaced from the backend).
+- [x] **Show shared users** — the modal's "Who has access" list, and a newly-wired **Shared with me** page (previously a Day 2 placeholder) showing everything actually shared with you, with your role, via the real `GET /shares/shared-with-me` endpoint (built Day 5).
+- [x] **Public link landing page** (`/shared-link/:token`) — new, not previously planned as a standalone page, but necessary: a "Copy link" button that copies a URL to nowhere isn't a complete sharing UI. This is a genuinely public, unauthenticated page — handles the happy path, password prompt, wrong password, expired link, and revoked/bogus link states.
+- [x] **One small backend addition**: `GET /public-link?file_id=` / `?folder_id=` — listing active links for a resource. This didn't exist before Day 11 (only create/revoke/access did), and without it the Share modal would have no way to know a link already exists when reopened, so a matching gap in the plan got closed rather than worked around. Covered by 4 new pytest tests (89 total now); owner-only, same pattern as the existing `GET /shares`.
+
+**Tested, not assumed:**
+- Clean `npm run build` and `oxlint` (0 warnings); confirmed all new files serve with no 404s, including SPA routing for the new public `/shared-link/:token` route.
+- **Full real end-to-end test**: booted the real backend (local SQLite) and drove the *exact* HTTP sequence each frontend component issues, using two real registered users (an owner and someone shared with) — invite by email, list shares, promote/revoke, create a public link, access it with **no auth at all** (confirming the public path genuinely requires no login), password-protected link with wrong/missing/correct password, and permission boundaries (a viewer correctly gets `403` trying to list shares or create a link). Every response shape was checked against exactly what the React components destructure, not just "does it return 200."
+- All 89 backend tests (85 + the 4 new listing-endpoint tests) and all 4 smoke-test scripts pass.
+
+**Scope note:** the Share modal only surfaces one public link per resource even though the backend allows creating several (documented in the component) — reopening always shows/manages the same one rather than letting you juggle multiple links, which matches how most users would actually want this to work. Clicking a file shared directly with you (as opposed to a folder) from the "Shared with me" page doesn't open a preview yet — only folder navigation is wired there; noting this now rather than leaving it to be discovered as a dead click.
+
 ## Day 10 status — File Upload & Preview UI ✅
 
 Upload is now a real, working feature — not a disabled button.
@@ -455,8 +471,9 @@ curl -s http://localhost:8000/files/<file_id> -H "X-User-Id: $USER_ID"
 Step 4's `download_url` should be a real, fetchable Supabase URL — opening it in a
 browser should download the file you uploaded.
 
-## Next up (Day 11)
+## Next up (Day 12)
 
-Sharing UI & Permissions: a share modal (email + viewer/editor role, matching the
-Day 5 backend), a public-link generator, and a view of who a file/folder is already
-shared with. Not started yet — waiting on your confirmation of Day 10.
+Search, Sorting & Optimization: a real search bar wired to the Day 6 `GET /search`
+API, sorting the file list by name/date/size, and pagination or lazy loading for
+folders with a lot of items. Not started yet — waiting on your confirmation of
+Day 11.

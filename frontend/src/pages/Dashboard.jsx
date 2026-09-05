@@ -1,12 +1,13 @@
 import { useState } from "react";
 import { useDropzone } from "react-dropzone";
 import { useNavigate, useParams } from "react-router-dom";
-import { AlertCircle, FolderOpen, FolderPlus, Loader2, UploadCloud } from "lucide-react";
+import { AlertCircle, FolderOpen, FolderPlus, Loader2, Share2, UploadCloud } from "lucide-react";
 import Breadcrumb from "../components/Breadcrumb";
 import EmptyState from "../components/EmptyState";
 import FilePreviewModal from "../components/FilePreviewModal";
 import FileTypeIcon from "../components/FileTypeIcon";
 import NewFolderModal from "../components/NewFolderModal";
+import ShareModal from "../components/ShareModal";
 import UploadProgressPanel from "../components/UploadProgressPanel";
 import { useCreateFolder, useFolderContents } from "../hooks/useFolderContents";
 import { useFileUpload } from "../hooks/useFileUpload";
@@ -17,6 +18,7 @@ export default function Dashboard() {
   const navigate = useNavigate();
   const [showNewFolder, setShowNewFolder] = useState(false);
   const [previewFileId, setPreviewFileId] = useState(null);
+  const [shareTarget, setShareTarget] = useState(null); // { fileId } | { folderId } | { fileId/folderId, name }
 
   const { data, isLoading, isError, error } = useFolderContents(folderId);
   const createFolderMutation = useCreateFolder(folderId);
@@ -43,6 +45,16 @@ export default function Dashboard() {
     if (file.upload_status === "uploaded") setPreviewFileId(file.id);
   }
 
+  function openShareForFolder(e, folder) {
+    e.stopPropagation();
+    setShareTarget({ folderId: folder.id, name: folder.name });
+  }
+
+  function openShareForFile(e, file) {
+    e.stopPropagation();
+    setShareTarget({ fileId: file.id, name: file.name });
+  }
+
   const isEmpty = data && data.subfolders.length === 0 && data.files.length === 0;
 
   return (
@@ -56,6 +68,15 @@ export default function Dashboard() {
           {data?.folder ? data.folder.name : "My Drive"}
         </h1>
         <div className="flex items-center gap-2">
+          {data?.folder && (
+            <button
+              onClick={() => setShareTarget({ folderId: data.folder.id, name: data.folder.name })}
+              className="flex items-center gap-2 rounded-lg border border-stone-300 px-4 py-2 text-sm font-medium text-stone-700 hover:bg-stone-50"
+            >
+              <Share2 className="h-4 w-4" strokeWidth={1.75} />
+              Share this folder
+            </button>
+          )}
           <button
             onClick={() => setShowNewFolder(true)}
             className="flex items-center gap-2 rounded-lg border border-stone-300 px-4 py-2 text-sm font-medium text-stone-700 hover:bg-stone-50"
@@ -103,6 +124,7 @@ export default function Dashboard() {
                 <th className="px-4 py-2.5 font-medium">Name</th>
                 <th className="px-4 py-2.5 font-medium">Size</th>
                 <th className="px-4 py-2.5 font-medium">Modified</th>
+                <th className="px-4 py-2.5 font-medium"></th>
               </tr>
             </thead>
             <tbody className="divide-y divide-stone-100">
@@ -110,7 +132,7 @@ export default function Dashboard() {
                 <tr
                   key={folder.id}
                   onClick={() => navigate(`/folder/${folder.id}`)}
-                  className="cursor-pointer hover:bg-stone-50"
+                  className="group cursor-pointer hover:bg-stone-50"
                 >
                   <td className="flex items-center gap-2.5 px-4 py-2.5 text-stone-800">
                     <FolderOpen className="h-4 w-4 shrink-0 text-teal-700" strokeWidth={1.75} />
@@ -118,13 +140,22 @@ export default function Dashboard() {
                   </td>
                   <td className="px-4 py-2.5 text-stone-400">—</td>
                   <td className="px-4 py-2.5 text-stone-500">{formatDate(folder.updated_at)}</td>
+                  <td className="px-4 py-2.5 text-right">
+                    <button
+                      onClick={(e) => openShareForFolder(e, folder)}
+                      className="rounded-lg p-1.5 text-stone-400 opacity-0 hover:bg-stone-100 hover:text-stone-700 group-hover:opacity-100"
+                      aria-label={`Share ${folder.name}`}
+                    >
+                      <Share2 className="h-4 w-4" strokeWidth={1.75} />
+                    </button>
+                  </td>
                 </tr>
               ))}
               {data.files.map((file) => (
                 <tr
                   key={file.id}
                   onClick={() => handleFileRowClick(file)}
-                  className={file.upload_status === "uploaded" ? "cursor-pointer hover:bg-stone-50" : "opacity-70"}
+                  className={`group ${file.upload_status === "uploaded" ? "cursor-pointer hover:bg-stone-50" : "opacity-70"}`}
                   title={file.upload_status !== "uploaded" ? "Upload hasn't finished for this file yet" : undefined}
                 >
                   <td className="flex items-center gap-2.5 px-4 py-2.5 text-stone-800">
@@ -138,6 +169,15 @@ export default function Dashboard() {
                   </td>
                   <td className="px-4 py-2.5 text-stone-500">{formatBytes(file.size_bytes)}</td>
                   <td className="px-4 py-2.5 text-stone-500">{formatDate(file.updated_at)}</td>
+                  <td className="px-4 py-2.5 text-right">
+                    <button
+                      onClick={(e) => openShareForFile(e, file)}
+                      className="rounded-lg p-1.5 text-stone-400 opacity-0 hover:bg-stone-100 hover:text-stone-700 group-hover:opacity-100"
+                      aria-label={`Share ${file.name}`}
+                    >
+                      <Share2 className="h-4 w-4" strokeWidth={1.75} />
+                    </button>
+                  </td>
                 </tr>
               ))}
             </tbody>
@@ -161,6 +201,14 @@ export default function Dashboard() {
       )}
 
       {previewFileId && <FilePreviewModal fileId={previewFileId} onClose={() => setPreviewFileId(null)} />}
+
+      {shareTarget && (
+        <ShareModal
+          target={shareTarget}
+          resourceName={shareTarget.name}
+          onClose={() => setShareTarget(null)}
+        />
+      )}
 
       <UploadProgressPanel uploads={uploads} onDismiss={dismissUpload} />
     </div>

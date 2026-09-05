@@ -4,6 +4,7 @@ import Layout from "./components/Layout";
 import ProtectedRoute from "./components/ProtectedRoute";
 import Dashboard from "./pages/Dashboard";
 import Login from "./pages/Login";
+import PublicLinkView from "./pages/PublicLinkView";
 import Shared from "./pages/Shared";
 import Signup from "./pages/Signup";
 import Starred from "./pages/Starred";
@@ -12,6 +13,8 @@ import Trash from "./pages/Trash";
 export default function App() {
   return (
     <Routes>
+      <Route path="/shared-link/:token" element={<PublicLinkView />} />
+
       <Route
         path="/login"
         element={

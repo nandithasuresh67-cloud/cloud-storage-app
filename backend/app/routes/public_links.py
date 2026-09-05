@@ -1,9 +1,9 @@
 import secrets
 import uuid
 from datetime import datetime, timedelta
-from typing import Union
+from typing import Optional, Union
 
-from fastapi import APIRouter, Depends, HTTPException, status
+from fastapi import APIRouter, Depends, HTTPException, Query, status
 from sqlalchemy.orm import Session
 
 from app.core.config import get_settings
@@ -38,6 +38,31 @@ def _to_out(link: LinkShare) -> PublicLinkOut:
         expires_at=link.expires_at,
         created_at=link.created_at,
     )
+
+
+@router.get("/public-link", response_model=list[PublicLinkOut])
+def list_public_links(
+    file_id: Optional[uuid.UUID] = Query(None),
+    folder_id: Optional[uuid.UUID] = Query(None),
+    db: Session = Depends(get_db),
+    owner_id: uuid.UUID = Depends(get_current_user_id),
+):
+    """
+    Lists active public links for a file or folder - owner-only, same
+    shape as GET /shares. Exists so the frontend Share modal can show
+    "this already has a public link" instead of only ever being able to
+    create new ones with no way to see or manage existing ones.
+    """
+    if (file_id is None) == (folder_id is None):
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Provide exactly one of file_id or folder_id.")
+
+    if file_id is not None:
+        require_file_access(db, file_id, owner_id, Role.OWNER)
+    else:
+        require_folder_access(db, folder_id, owner_id, Role.OWNER)
+
+    links = db.query(LinkShare).filter(LinkShare.file_id == file_id, LinkShare.folder_id == folder_id).all()
+    return [_to_out(link) for link in links]
 
 
 @router.post("/public-link", response_model=PublicLinkOut, status_code=status.HTTP_201_CREATED)

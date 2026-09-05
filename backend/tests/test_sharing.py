@@ -199,6 +199,49 @@ def test_public_folder_link_lists_immediate_contents(client, owner):
     assert "Sub" in names
 
 
+def test_list_public_links_for_a_file(client, owner):
+    _, owner_headers = owner
+    body = upload_file(client, owner_headers, "shared.txt")
+
+    r = client.get(f"/public-link?file_id={body['file_id']}", headers=owner_headers)
+    assert r.status_code == 200
+    assert r.json() == []
+
+    created = client.post("/public-link", json={"file_id": body["file_id"]}, headers=owner_headers).json()
+
+    r = client.get(f"/public-link?file_id={body['file_id']}", headers=owner_headers)
+    assert r.status_code == 200
+    assert len(r.json()) == 1
+    assert r.json()[0]["id"] == created["id"]
+    assert r.json()[0]["token"] == created["token"]
+
+
+def test_list_public_links_requires_exactly_one_target(client, owner):
+    _, owner_headers = owner
+    assert client.get("/public-link", headers=owner_headers).status_code == 400
+
+
+def test_list_public_links_is_owner_only(client, owner, make_user):
+    _, owner_headers = owner
+    _, viewer_headers = make_user("viewer@example.com")
+    body = upload_file(client, owner_headers, "shared.txt")
+    client.post("/shares", json={"file_id": body["file_id"], "email": "viewer@example.com", "role": "viewer"}, headers=owner_headers)
+    client.post("/public-link", json={"file_id": body["file_id"]}, headers=owner_headers)
+
+    assert client.get(f"/public-link?file_id={body['file_id']}", headers=viewer_headers).status_code == 403
+
+
+def test_revoked_link_no_longer_appears_in_listing(client, owner):
+    _, owner_headers = owner
+    body = upload_file(client, owner_headers, "shared.txt")
+    link = client.post("/public-link", json={"file_id": body["file_id"]}, headers=owner_headers).json()
+
+    client.delete(f"/public-link/{link['id']}", headers=owner_headers)
+
+    r = client.get(f"/public-link?file_id={body['file_id']}", headers=owner_headers)
+    assert r.json() == []
+
+
 def test_only_owner_can_revoke_public_link(client, owner, make_user):
     _, owner_headers = owner
     _, viewer_headers = make_user("viewer@example.com")
