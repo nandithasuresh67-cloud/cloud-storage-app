@@ -36,8 +36,8 @@ export default function Header() {
   }, [value]);
 
   return (
-    <header className="flex items-center justify-between border-b border-stone-200 bg-white px-6 py-3">
-      <div className="flex w-full max-w-md items-center gap-2 rounded-lg border border-stone-200 bg-stone-50 px-3 py-2">
+    <header className="flex flex-wrap items-center justify-between gap-3 border-b border-stone-200 bg-white px-4 py-3 sm:flex-nowrap sm:px-6">
+      <div className="order-2 flex w-full max-w-md items-center gap-2 rounded-lg border border-stone-200 bg-stone-50 px-3 py-2 sm:order-1">
         <Search className="h-4 w-4 shrink-0 text-stone-400" strokeWidth={1.75} />
         <input
           type="text"
@@ -52,7 +52,7 @@ export default function Header() {
           </button>
         )}
       </div>
-      <div className="flex items-center gap-3">
+      <div className="order-1 flex items-center gap-2 sm:order-2 sm:gap-3">
         <ConnectionStatus />
         <UserMenu />
       </div>

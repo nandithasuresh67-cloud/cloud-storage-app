@@ -486,11 +486,43 @@ curl -s http://localhost:8000/files/<file_id> -H "X-User-Id: $USER_ID"
 Step 4's `download_url` should be a real, fetchable Supabase URL — opening it in a
 browser should download the file you uploaded.
 
-## Next up (Day 13)
+## Next up
 
-Trash, Versioning & Final Testing: wire the Trash page (still a Day 2 static
-placeholder) to the real Day 6 trash API — list, restore, permanent delete — plus
-broader end-to-end frontend testing. File versioning is listed in the spec but no
-version-upload API exists on the backend yet, so that would need a backend addition
-first, same as pagination did today. Not started yet — waiting on your confirmation
-of Day 12.
+The 14-day implementation is now complete. Day 13 covers the Trash UI, restore/permanent delete flows, and final regression checks. Day 14 covers deployment preparation, responsive polish, error handling, and final documentation.
+
+## Day 13 status — Trash, Versioning & Final Testing ✅
+
+- [x] **Trash UI** — the Trash page now uses the real `GET /trash` endpoint and shows deleted root items with name, type, and deleted time.
+- [x] **Restore** — files and folders can be restored from Trash using the existing backend cascade behavior for folders.
+- [x] **Permanent delete** — destructive deletion is behind a confirmation dialog and calls the real `/trash/{files,folders}/{id}` endpoint; storage cleanup remains handled by the backend.
+- [x] **Loading and error states** — Trash has loading indicators, retry handling, and visible API error messages.
+- [x] **Frontend crash recovery** — an error boundary prevents an unexpected React render error from leaving the app on a blank screen.
+- [x] **Responsive pass** — the main shell, header, and Trash table adapt to smaller screens; wide data tables scroll horizontally instead of breaking the layout.
+- [x] **Final backend regression coverage** — the existing trash tests cover cascading delete/restore, permanent deletion, storage cleanup, and ownership boundaries; Day 12's 93-test suite remains the baseline.
+
+**Version history note:** `file_versions` is present in the data model, but version-upload/history is a Phase 2 feature in the project specification and was not added to the MVP because the existing backend has no version-upload contract. The Day 13 plan labels the version-history UI as optional.
+
+## Day 14 status — Deployment & Polish ✅
+
+- [x] **Frontend deployment preparation** — Vercel SPA rewrite configuration added in `frontend/vercel.json` so React Router routes resolve correctly after a refresh.
+- [x] **Environment configuration** — `VITE_API_URL` is documented for local and production environments; no backend URL is hardcoded into the production build.
+- [x] **Mobile responsiveness** — shell/header spacing and content sizing were adjusted for smaller viewports, while data-heavy tables remain usable with horizontal scrolling.
+- [x] **Error handling & loaders** — existing feature pages expose API errors and loading states, with the global ErrorBoundary covering unexpected render failures.
+- [x] **Documentation** — this README records the completed feature scope, known limitations, test status, and deployment configuration.
+
+### Deployment checklist
+
+**Backend (Render/Fly.io/Railway):**
+1. Set the production environment variables from `backend/.env.example`.
+2. Set `CORS_ORIGINS` to the exact Vercel frontend origin.
+3. Deploy the `backend/` service using the existing deployment configuration.
+4. Verify `GET /health` returns `{"status":"healthy", ...}`.
+
+**Frontend (Vercel):**
+1. Import the repository into Vercel.
+2. Set the project root to `frontend`.
+3. Build command: `npm run build`.
+4. Output directory: `dist`.
+5. Add `VITE_API_URL` with the deployed backend URL.
+6. Redeploy after changing environment variables.
+7. Verify login, My Drive, upload, search, sharing, Trash restore, and permanent delete against the live backend.

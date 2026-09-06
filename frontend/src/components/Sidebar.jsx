@@ -12,7 +12,7 @@ export default function Sidebar() {
   const location = useLocation();
 
   return (
-    <aside className="flex h-screen w-64 shrink-0 flex-col border-r border-stone-200 bg-white">
+    <aside className="flex min-h-screen w-56 shrink-0 flex-col sm:w-64 border-r border-stone-200 bg-white">
       <div className="flex items-center gap-2 px-6 py-5">
         <Cloud className="h-5 w-5 text-teal-700" strokeWidth={1.75} />
         <span className="text-[15px] font-medium text-stone-900">Cloud Storage</span>
