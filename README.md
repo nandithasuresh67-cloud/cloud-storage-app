@@ -4,6 +4,21 @@ Google Drive–style file storage & sharing app. Stack: **React + Vite + Tailwin
 (frontend, starts Day 8), **FastAPI** (backend), **Supabase Postgres** (database),
 **Supabase Storage** (files). Built against the 14-day plan in the project spec.
 
+## Day 12 status — Search, Sorting & Optimization ✅
+
+- [x] **Search bar** — the header's search input (disabled since Day 2) is wired up: debounced (300ms), navigates to `/search?q=...`, backed by the real `GET /search` (Day 6 API). Results page has an All/Folders/Files filter, matching the backend's `item_type` param; clicking a folder navigates in, clicking a file opens the same preview modal used on My Drive.
+- [x] **Sorting by name/date/size** — clickable column headers on My Drive (`SortableHeader`), toggling ascending/descending. This is **real server-side sorting**, not a client-side re-sort of an already-fetched page — see the note below on why that distinction actually matters here.
+- [x] **Pagination / lazy loading** — a genuine "Load more" button backed by `useInfiniteQuery`, fetching 25 items at a time from the backend rather than the whole folder upfront.
+
+**Why sorting and pagination needed a backend change, not just frontend work:** `GET /folders/contents` had no `sort_by`/`sort_order`/`limit`/`offset` before today — it returned every item, always ordered by name. Sorting purely client-side after fetching one page would only reorder whatever happened to already be loaded; as soon as a folder has more than one page, "sort by size" would silently produce a wrong answer (correct-looking on a small test folder, broken on a real one) instead of actually sorting the full set. So this day added real query params to the endpoint: `sort_by` (name/size/updated_at), `sort_order` (asc/desc), `limit`, `offset`, plus `subfolders_total`/`files_total` in the response so the frontend knows when to stop offering "Load more". Folders have no `size` column, so `sort_by=size` falls back to sorting folders by name rather than erroring or returning an undefined order.
+
+**Tested, not assumed:**
+- New pytest coverage for the pagination/sorting change specifically: default sort order, explicit ascending/descending on both name and size, the folder-has-no-size fallback, an invalid `sort_by` value correctly rejected with `422`, and — the one that actually matters — **walking every page with a small fixed limit reconstructs the exact original set with no duplicates and no gaps**. Pagination bugs almost always show up exactly there (an off-by-one, or ties in the sort column jumping between pages), so I didn't just check that *a* page loads correctly, I checked that paging through everything adds up. 93 backend tests total now (up from 89), all passing, plus all 4 smoke scripts.
+- Clean `npm run build` and `oxlint` (0 warnings) on a fresh install.
+- **Full real end-to-end test**: booted the real backend against a real local database, created 30 real folders, and replayed the exact HTTP calls `useFolderContents`'s pagination math and `SortableHeader`'s click-to-toggle logic issue — confirmed page 1 returns 25 items with `subfolders_total: 30` (so "Load more" correctly appears), page 2 returns the remaining 5 with zero overlap, sorting flips correctly in both directions, and files sort by actual byte size. Also replayed the search bar's exact debounced-navigation target and the results page's folder-only filter against real data.
+
+**Scope note:** sorting and pagination were added to `GET /folders/contents` (My Drive) specifically, since that's the primary listing surface the spec's day title refers to. Search results are not paginated or sortable — reasonable for a search results list, which the spec doesn't call out as needing either.
+
 ## Day 11 status — Sharing UI & Permissions ✅
 
 Sharing is now a real, working feature from the UI — not just an API.
@@ -471,9 +486,11 @@ curl -s http://localhost:8000/files/<file_id> -H "X-User-Id: $USER_ID"
 Step 4's `download_url` should be a real, fetchable Supabase URL — opening it in a
 browser should download the file you uploaded.
 
-## Next up (Day 12)
+## Next up (Day 13)
 
-Search, Sorting & Optimization: a real search bar wired to the Day 6 `GET /search`
-API, sorting the file list by name/date/size, and pagination or lazy loading for
-folders with a lot of items. Not started yet — waiting on your confirmation of
-Day 11.
+Trash, Versioning & Final Testing: wire the Trash page (still a Day 2 static
+placeholder) to the real Day 6 trash API — list, restore, permanent delete — plus
+broader end-to-end frontend testing. File versioning is listed in the spec but no
+version-upload API exists on the backend yet, so that would need a backend addition
+first, same as pagination did today. Not started yet — waiting on your confirmation
+of Day 12.

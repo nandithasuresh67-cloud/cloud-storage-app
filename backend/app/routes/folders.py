@@ -1,7 +1,8 @@
 import uuid
-from typing import Optional
+from typing import Literal, Optional
 
 from fastapi import APIRouter, Depends, HTTPException, Query, status
+from sqlalchemy import asc, desc
 from sqlalchemy.orm import Session
 
 from app.core.database import get_db
@@ -13,6 +14,9 @@ from app.services import folder_service, trash_service
 from app.services.permissions import Role, require_folder_access
 
 router = APIRouter(prefix="/folders", tags=["folders"])
+
+SortBy = Literal["name", "size", "updated_at"]
+SortOrder = Literal["asc", "desc"]
 
 
 @router.post("", response_model=FolderOut, status_code=status.HTTP_201_CREATED)
@@ -35,6 +39,10 @@ def create_folder(
 @router.get("/contents", response_model=FolderContents)
 def list_contents(
     folder_id: Optional[uuid.UUID] = Query(None, description="Omit to list your own root"),
+    sort_by: SortBy = Query("name"),
+    sort_order: SortOrder = Query("asc"),
+    limit: int = Query(50, ge=1, le=200, description="Max items to return per type (subfolders and files each)"),
+    offset: int = Query(0, ge=0),
     db: Session = Depends(get_db),
     user_id: uuid.UUID = Depends(get_current_user_id),
 ):
@@ -44,6 +52,18 @@ def list_contents(
     VIEWER+ access - works for folders shared with you too, not just ones
     you own. (The root itself isn't shareable as a whole - it's always
     your own root when folder_id is omitted.)
+
+    Sorting and pagination happen server-side, not as an afterthought on
+    an already-fully-fetched list - sorting client-side after a partial
+    fetch would only ever reorder the current page, silently producing
+    wrong results as soon as there's more than one page. `limit`/`offset`
+    apply independently to subfolders and files (each gets its own slice
+    of up to `limit` items starting at `offset`), since they're modeled
+    as two separate collections rather than one combined stream.
+
+    Folders have no `size`, so sort_by=size sorts folders by name instead
+    (falling back to something well-defined rather than an arbitrary or
+    undefined order) while files sort by actual size_bytes as requested.
     """
     folder = None
     if folder_id is not None:
@@ -52,24 +72,31 @@ def list_contents(
     else:
         owner_id_for_listing = user_id
 
+    direction = asc if sort_order == "asc" else desc
+
+    folder_sort_column = Folder.updated_at if sort_by == "updated_at" else Folder.name
+    subfolders_query = db.query(Folder).filter(
+        Folder.owner_id == owner_id_for_listing, Folder.parent_id == folder_id, Folder.is_trashed.is_(False)
+    )
+    subfolders_total = subfolders_query.count()
     subfolders = (
-        db.query(Folder)
-        .filter(Folder.owner_id == owner_id_for_listing, Folder.parent_id == folder_id, Folder.is_trashed.is_(False))
-        .order_by(Folder.name)
-        .all()
+        subfolders_query.order_by(direction(folder_sort_column), Folder.id).offset(offset).limit(limit).all()
     )
-    files = (
-        db.query(File)
-        .filter(File.owner_id == owner_id_for_listing, File.folder_id == folder_id, File.is_trashed.is_(False))
-        .order_by(File.name)
-        .all()
+
+    file_sort_column = {"name": File.name, "size": File.size_bytes, "updated_at": File.updated_at}[sort_by]
+    files_query = db.query(File).filter(
+        File.owner_id == owner_id_for_listing, File.folder_id == folder_id, File.is_trashed.is_(False)
     )
+    files_total = files_query.count()
+    files = files_query.order_by(direction(file_sort_column), File.id).offset(offset).limit(limit).all()
 
     return FolderContents(
         folder=folder,
         breadcrumb=folder_service.get_breadcrumb(db, folder),
         subfolders=subfolders,
         files=files,
+        subfolders_total=subfolders_total,
+        files_total=files_total,
     )
 
 

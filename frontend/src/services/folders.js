@@ -1,8 +1,14 @@
 import api from "./api";
 
-export async function getFolderContents(folderId) {
+export async function getFolderContents(folderId, { sortBy = "name", sortOrder = "asc", limit = 25, offset = 0 } = {}) {
   const { data } = await api.get("/folders/contents", {
-    params: folderId ? { folder_id: folderId } : {},
+    params: {
+      ...(folderId ? { folder_id: folderId } : {}),
+      sort_by: sortBy,
+      sort_order: sortOrder,
+      limit,
+      offset,
+    },
   });
   return data;
 }

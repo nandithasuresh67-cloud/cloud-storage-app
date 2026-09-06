@@ -8,6 +8,7 @@ import FilePreviewModal from "../components/FilePreviewModal";
 import FileTypeIcon from "../components/FileTypeIcon";
 import NewFolderModal from "../components/NewFolderModal";
 import ShareModal from "../components/ShareModal";
+import SortableHeader from "../components/SortableHeader";
 import UploadProgressPanel from "../components/UploadProgressPanel";
 import { useCreateFolder, useFolderContents } from "../hooks/useFolderContents";
 import { useFileUpload } from "../hooks/useFileUpload";
@@ -19,8 +20,22 @@ export default function Dashboard() {
   const [showNewFolder, setShowNewFolder] = useState(false);
   const [previewFileId, setPreviewFileId] = useState(null);
   const [shareTarget, setShareTarget] = useState(null); // { fileId } | { folderId } | { fileId/folderId, name }
+  const [sort, setSort] = useState({ sortBy: "name", sortOrder: "asc" });
 
-  const { data, isLoading, isError, error } = useFolderContents(folderId);
+  const {
+    folder,
+    breadcrumb,
+    subfolders,
+    files,
+    subfoldersTotal,
+    filesTotal,
+    isLoading,
+    isError,
+    error,
+    hasNextPage,
+    isFetchingNextPage,
+    fetchNextPage,
+  } = useFolderContents(folderId, sort);
   const createFolderMutation = useCreateFolder(folderId);
   const { uploads, startUpload, dismissUpload } = useFileUpload(folderId);
 
@@ -34,7 +49,7 @@ export default function Dashboard() {
 
   const breadcrumbItems = [
     { label: "My Drive", to: "/" },
-    ...(data?.breadcrumb || []).map((b) => ({ label: b.name, to: `/folder/${b.id}` })),
+    ...breadcrumb.map((b) => ({ label: b.name, to: `/folder/${b.id}` })),
   ];
 
   function handleCreateFolder(name) {
@@ -55,7 +70,13 @@ export default function Dashboard() {
     setShareTarget({ fileId: file.id, name: file.name });
   }
 
-  const isEmpty = data && data.subfolders.length === 0 && data.files.length === 0;
+  function handleSort(sortBy, sortOrder) {
+    setSort({ sortBy, sortOrder });
+  }
+
+  const isEmpty = !isLoading && subfolders.length === 0 && files.length === 0;
+  const loadedCount = subfolders.length + files.length;
+  const totalCount = subfoldersTotal + filesTotal;
 
   return (
     <div {...getRootProps()} className="relative min-h-full outline-none">
@@ -64,13 +85,11 @@ export default function Dashboard() {
       <Breadcrumb items={breadcrumbItems} />
 
       <div className="mb-6 flex items-center justify-between">
-        <h1 className="text-lg font-medium text-stone-900">
-          {data?.folder ? data.folder.name : "My Drive"}
-        </h1>
+        <h1 className="text-lg font-medium text-stone-900">{folder ? folder.name : "My Drive"}</h1>
         <div className="flex items-center gap-2">
-          {data?.folder && (
+          {folder && (
             <button
-              onClick={() => setShareTarget({ folderId: data.folder.id, name: data.folder.name })}
+              onClick={() => setShareTarget({ folderId: folder.id, name: folder.name })}
               className="flex items-center gap-2 rounded-lg border border-stone-300 px-4 py-2 text-sm font-medium text-stone-700 hover:bg-stone-50"
             >
               <Share2 className="h-4 w-4" strokeWidth={1.75} />
@@ -108,7 +127,7 @@ export default function Dashboard() {
         />
       )}
 
-      {data && isEmpty && (
+      {isEmpty && (
         <EmptyState
           icon={FolderOpen}
           title="No files yet"
@@ -116,73 +135,92 @@ export default function Dashboard() {
         />
       )}
 
-      {data && !isEmpty && (
-        <div className="overflow-hidden rounded-xl border border-stone-200">
-          <table className="w-full text-left text-sm">
-            <thead>
-              <tr className="border-b border-stone-200 bg-stone-50 text-xs font-medium uppercase tracking-wide text-stone-500">
-                <th className="px-4 py-2.5 font-medium">Name</th>
-                <th className="px-4 py-2.5 font-medium">Size</th>
-                <th className="px-4 py-2.5 font-medium">Modified</th>
-                <th className="px-4 py-2.5 font-medium"></th>
-              </tr>
-            </thead>
-            <tbody className="divide-y divide-stone-100">
-              {data.subfolders.map((folder) => (
-                <tr
-                  key={folder.id}
-                  onClick={() => navigate(`/folder/${folder.id}`)}
-                  className="group cursor-pointer hover:bg-stone-50"
-                >
-                  <td className="flex items-center gap-2.5 px-4 py-2.5 text-stone-800">
-                    <FolderOpen className="h-4 w-4 shrink-0 text-teal-700" strokeWidth={1.75} />
-                    {folder.name}
-                  </td>
-                  <td className="px-4 py-2.5 text-stone-400">—</td>
-                  <td className="px-4 py-2.5 text-stone-500">{formatDate(folder.updated_at)}</td>
-                  <td className="px-4 py-2.5 text-right">
-                    <button
-                      onClick={(e) => openShareForFolder(e, folder)}
-                      className="rounded-lg p-1.5 text-stone-400 opacity-0 hover:bg-stone-100 hover:text-stone-700 group-hover:opacity-100"
-                      aria-label={`Share ${folder.name}`}
-                    >
-                      <Share2 className="h-4 w-4" strokeWidth={1.75} />
-                    </button>
-                  </td>
+      {!isLoading && !isEmpty && (
+        <>
+          <div className="overflow-hidden rounded-xl border border-stone-200">
+            <table className="w-full text-left text-sm">
+              <thead>
+                <tr className="border-b border-stone-200 bg-stone-50 text-xs font-medium uppercase tracking-wide text-stone-500">
+                  <SortableHeader label="Name" sortKey="name" currentSort={sort} onSort={handleSort} />
+                  <SortableHeader label="Size" sortKey="size" currentSort={sort} onSort={handleSort} />
+                  <SortableHeader label="Modified" sortKey="updated_at" currentSort={sort} onSort={handleSort} />
+                  <th className="px-4 py-2.5 font-medium"></th>
                 </tr>
-              ))}
-              {data.files.map((file) => (
-                <tr
-                  key={file.id}
-                  onClick={() => handleFileRowClick(file)}
-                  className={`group ${file.upload_status === "uploaded" ? "cursor-pointer hover:bg-stone-50" : "opacity-70"}`}
-                  title={file.upload_status !== "uploaded" ? "Upload hasn't finished for this file yet" : undefined}
+              </thead>
+              <tbody className="divide-y divide-stone-100">
+                {subfolders.map((f) => (
+                  <tr
+                    key={f.id}
+                    onClick={() => navigate(`/folder/${f.id}`)}
+                    className="group cursor-pointer hover:bg-stone-50"
+                  >
+                    <td className="flex items-center gap-2.5 px-4 py-2.5 text-stone-800">
+                      <FolderOpen className="h-4 w-4 shrink-0 text-teal-700" strokeWidth={1.75} />
+                      {f.name}
+                    </td>
+                    <td className="px-4 py-2.5 text-stone-400">—</td>
+                    <td className="px-4 py-2.5 text-stone-500">{formatDate(f.updated_at)}</td>
+                    <td className="px-4 py-2.5 text-right">
+                      <button
+                        onClick={(e) => openShareForFolder(e, f)}
+                        className="rounded-lg p-1.5 text-stone-400 opacity-0 hover:bg-stone-100 hover:text-stone-700 group-hover:opacity-100"
+                        aria-label={`Share ${f.name}`}
+                      >
+                        <Share2 className="h-4 w-4" strokeWidth={1.75} />
+                      </button>
+                    </td>
+                  </tr>
+                ))}
+                {files.map((file) => (
+                  <tr
+                    key={file.id}
+                    onClick={() => handleFileRowClick(file)}
+                    className={`group ${file.upload_status === "uploaded" ? "cursor-pointer hover:bg-stone-50" : "opacity-70"}`}
+                    title={file.upload_status !== "uploaded" ? "Upload hasn't finished for this file yet" : undefined}
+                  >
+                    <td className="flex items-center gap-2.5 px-4 py-2.5 text-stone-800">
+                      <FileTypeIcon mimeType={file.mime_type} className="h-4 w-4 shrink-0 text-stone-400" />
+                      {file.name}
+                      {file.upload_status === "pending" && (
+                        <span className="rounded-full bg-amber-50 px-2 py-0.5 text-xs text-amber-700">
+                          upload incomplete
+                        </span>
+                      )}
+                    </td>
+                    <td className="px-4 py-2.5 text-stone-500">{formatBytes(file.size_bytes)}</td>
+                    <td className="px-4 py-2.5 text-stone-500">{formatDate(file.updated_at)}</td>
+                    <td className="px-4 py-2.5 text-right">
+                      <button
+                        onClick={(e) => openShareForFile(e, file)}
+                        className="rounded-lg p-1.5 text-stone-400 opacity-0 hover:bg-stone-100 hover:text-stone-700 group-hover:opacity-100"
+                        aria-label={`Share ${file.name}`}
+                      >
+                        <Share2 className="h-4 w-4" strokeWidth={1.75} />
+                      </button>
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+
+          {(hasNextPage || loadedCount > 0) && (
+            <div className="mt-3 flex items-center justify-center gap-3 text-sm text-stone-500">
+              {hasNextPage ? (
+                <button
+                  onClick={() => fetchNextPage()}
+                  disabled={isFetchingNextPage}
+                  className="flex items-center gap-2 rounded-lg border border-stone-300 px-4 py-1.5 font-medium text-stone-700 hover:bg-stone-50 disabled:opacity-60"
                 >
-                  <td className="flex items-center gap-2.5 px-4 py-2.5 text-stone-800">
-                    <FileTypeIcon mimeType={file.mime_type} className="h-4 w-4 shrink-0 text-stone-400" />
-                    {file.name}
-                    {file.upload_status === "pending" && (
-                      <span className="rounded-full bg-amber-50 px-2 py-0.5 text-xs text-amber-700">
-                        upload incomplete
-                      </span>
-                    )}
-                  </td>
-                  <td className="px-4 py-2.5 text-stone-500">{formatBytes(file.size_bytes)}</td>
-                  <td className="px-4 py-2.5 text-stone-500">{formatDate(file.updated_at)}</td>
-                  <td className="px-4 py-2.5 text-right">
-                    <button
-                      onClick={(e) => openShareForFile(e, file)}
-                      className="rounded-lg p-1.5 text-stone-400 opacity-0 hover:bg-stone-100 hover:text-stone-700 group-hover:opacity-100"
-                      aria-label={`Share ${file.name}`}
-                    >
-                      <Share2 className="h-4 w-4" strokeWidth={1.75} />
-                    </button>
-                  </td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
-        </div>
+                  {isFetchingNextPage && <Loader2 className="h-3.5 w-3.5 animate-spin" />}
+                  Load more ({loadedCount} of {totalCount})
+                </button>
+              ) : (
+                totalCount > 0 && <span>{totalCount} item{totalCount === 1 ? "" : "s"}</span>
+              )}
+            </div>
+          )}
+        </>
       )}
 
       {isDragActive && (
@@ -203,11 +241,7 @@ export default function Dashboard() {
       {previewFileId && <FilePreviewModal fileId={previewFileId} onClose={() => setPreviewFileId(null)} />}
 
       {shareTarget && (
-        <ShareModal
-          target={shareTarget}
-          resourceName={shareTarget.name}
-          onClose={() => setShareTarget(null)}
-        />
+        <ShareModal target={shareTarget} resourceName={shareTarget.name} onClose={() => setShareTarget(null)} />
       )}
 
       <UploadProgressPanel uploads={uploads} onDismiss={dismissUpload} />

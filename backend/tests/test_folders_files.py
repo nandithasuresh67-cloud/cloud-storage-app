@@ -48,6 +48,113 @@ def test_get_folder_other_user_404(client, owner, stranger):
     assert r.status_code == 404
 
 
+def test_default_sort_is_name_ascending(client, owner):
+    _, headers = owner
+    for name in ["Charlie", "Alpha", "Bravo"]:
+        client.post("/folders", json={"name": name}, headers=headers)
+    r = client.get("/folders/contents", headers=headers)
+    names = [f["name"] for f in r.json()["subfolders"]]
+    assert names == ["Alpha", "Bravo", "Charlie"]
+
+
+def test_sort_by_name_descending(client, owner):
+    _, headers = owner
+    for name in ["Charlie", "Alpha", "Bravo"]:
+        client.post("/folders", json={"name": name}, headers=headers)
+    r = client.get("/folders/contents?sort_by=name&sort_order=desc", headers=headers)
+    names = [f["name"] for f in r.json()["subfolders"]]
+    assert names == ["Charlie", "Bravo", "Alpha"]
+
+
+def test_sort_files_by_size(client, owner):
+    _, headers = owner
+    upload_file(client, headers, "small.txt", size_bytes=10)
+    upload_file(client, headers, "large.txt", size_bytes=10_000)
+    upload_file(client, headers, "medium.txt", size_bytes=500)
+
+    r = client.get("/folders/contents?sort_by=size&sort_order=asc", headers=headers)
+    names = [f["name"] for f in r.json()["files"]]
+    assert names == ["small.txt", "medium.txt", "large.txt"]
+
+    r = client.get("/folders/contents?sort_by=size&sort_order=desc", headers=headers)
+    names = [f["name"] for f in r.json()["files"]]
+    assert names == ["large.txt", "medium.txt", "small.txt"]
+
+
+def test_sort_by_size_on_folders_falls_back_to_name(client, owner):
+    """Folders have no size column - sort_by=size shouldn't error or return an arbitrary/undefined order."""
+    for name in ["Charlie", "Alpha", "Bravo"]:
+        client.post("/folders", json={"name": name}, headers=owner[1])
+    r = client.get("/folders/contents?sort_by=size&sort_order=asc", headers=owner[1])
+    assert r.status_code == 200
+    names = [f["name"] for f in r.json()["subfolders"]]
+    assert names == ["Alpha", "Bravo", "Charlie"]
+
+
+def test_invalid_sort_by_rejected(client, owner):
+    r = client.get("/folders/contents?sort_by=nonsense", headers=owner[1])
+    assert r.status_code == 422
+
+
+def test_pagination_limit_and_offset(client, owner):
+    _, headers = owner
+    for i in range(5):
+        client.post("/folders", json={"name": f"Folder{i}"}, headers=headers)
+
+    r = client.get("/folders/contents?limit=2&offset=0", headers=headers)
+    body = r.json()
+    assert len(body["subfolders"]) == 2
+    assert body["subfolders_total"] == 5
+    assert [f["name"] for f in body["subfolders"]] == ["Folder0", "Folder1"]
+
+    r = client.get("/folders/contents?limit=2&offset=2", headers=headers)
+    body = r.json()
+    assert len(body["subfolders"]) == 2
+    assert [f["name"] for f in body["subfolders"]] == ["Folder2", "Folder3"]
+
+    r = client.get("/folders/contents?limit=2&offset=4", headers=headers)
+    body = r.json()
+    assert len(body["subfolders"]) == 1
+    assert body["subfolders"][0]["name"] == "Folder4"
+
+
+def test_pagination_pages_do_not_overlap_or_skip(client, owner):
+    """Walking every page with a fixed limit should reconstruct the exact full set exactly once each."""
+    _, headers = owner
+    expected_names = {f"Item{i}" for i in range(7)}
+    for name in expected_names:
+        client.post("/folders", json={"name": name}, headers=headers)
+
+    seen = []
+    offset = 0
+    limit = 3
+    while True:
+        r = client.get(f"/folders/contents?limit={limit}&offset={offset}", headers=headers)
+        page = r.json()["subfolders"]
+        if not page:
+            break
+        seen.extend(f["name"] for f in page)
+        offset += limit
+
+    assert len(seen) == len(expected_names), "pagination produced duplicates or a different count than created"
+    assert set(seen) == expected_names
+
+
+def test_pagination_totals_reflect_full_count_not_page_size(client, owner):
+    _, headers = owner
+    for i in range(3):
+        client.post("/folders", json={"name": f"F{i}"}, headers=headers)
+    upload_file(client, headers, "a.txt")
+    upload_file(client, headers, "b.txt")
+
+    r = client.get("/folders/contents?limit=1&offset=0", headers=headers)
+    body = r.json()
+    assert body["subfolders_total"] == 3
+    assert body["files_total"] == 2
+    assert len(body["subfolders"]) == 1
+    assert len(body["files"]) == 1
+
+
 def test_list_root_contents(client, owner):
     _, headers = owner
     folder = client.post("/folders", json={"name": "Projects"}, headers=headers).json()

@@ -62,3 +62,7 @@ class FolderContents(BaseModel):
     breadcrumb: List[BreadcrumbItem]
     subfolders: List[FolderOut]
     files: List[FileOut]
+    # Counts BEFORE the limit/offset slice was applied, so the frontend
+    # can compute "is there more to load" without a second request.
+    subfolders_total: int
+    files_total: int

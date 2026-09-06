@@ -5,6 +5,7 @@ import ProtectedRoute from "./components/ProtectedRoute";
 import Dashboard from "./pages/Dashboard";
 import Login from "./pages/Login";
 import PublicLinkView from "./pages/PublicLinkView";
+import SearchResults from "./pages/SearchResults";
 import Shared from "./pages/Shared";
 import Signup from "./pages/Signup";
 import Starred from "./pages/Starred";
@@ -40,6 +41,7 @@ export default function App() {
               <Routes>
                 <Route path="/" element={<Dashboard />} />
                 <Route path="/folder/:folderId" element={<Dashboard />} />
+                <Route path="/search" element={<SearchResults />} />
                 <Route path="/shared" element={<Shared />} />
                 <Route path="/starred" element={<Starred />} />
                 <Route path="/trash" element={<Trash />} />
