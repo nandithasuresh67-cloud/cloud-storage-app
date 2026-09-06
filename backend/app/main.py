@@ -4,11 +4,15 @@ from fastapi.middleware.cors import CORSMiddleware
 from app.core.config import get_settings
 from app.core.startup_checks import check_environment
 from app.routes import auth, files, folders, public_links, search, shares, trash
+from app.core.database import Base, engine
+from app import models  # noqa: F401  (registers all models on Base.metadata)
 
 settings = get_settings()
 check_environment(settings)
 
 app = FastAPI(title=settings.APP_NAME)
+if engine is not None:
+    Base.metadata.create_all(bind=engine)
 
 app.add_middleware(
     CORSMiddleware,
