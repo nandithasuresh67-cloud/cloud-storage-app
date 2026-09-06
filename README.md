@@ -1,3 +1,54 @@
+# Day 13 & Day 14 — Final Frontend Requirements
+
+## Day 13 — Trash, Versioning & Final Testing
+
+- [x] **Trash UI** — active Drive rows now have a Delete/Trash action. Deleting a file or folder calls the existing soft-delete API and moves the item into the Trash page without changing the stored object.
+- [x] **Restore** — Trash provides a Restore action for files and folders. Folder restore uses the backend cascade behavior already covered by the existing tests.
+- [x] **Permanent delete** — Trash provides a Delete forever action behind a confirmation dialog. The existing backend removes database records and storage objects where applicable.
+- [x] **Optional version history UI** — intentionally not added. Version history is optional in the plan, and the current backend does not expose a version-upload/history API.
+- [x] **End-to-end testing support** — existing backend regression tests cover trash, restore, permanent delete, cascade behavior, storage cleanup, and ownership boundaries. The frontend now invalidates both Drive and Trash queries after a delete/restore so the UI reflects the operation without a manual reload.
+
+### Day 13 verification flow
+
+1. Create or upload a test item in My Drive.
+2. Click the **Trash/Delete** icon on its row and confirm **Move to Trash**.
+3. Open **Trash** and verify the item appears.
+4. Click **Restore** and verify it returns to My Drive.
+5. Move it to Trash again, choose **Delete forever**, confirm the dialog, and verify it is gone after refresh.
+6. Repeat the flow with a folder containing a subfolder/file to verify cascading trash and restore.
+
+## Day 14 — Deployment & Polish
+
+- [x] **Vercel deployment configuration** — `frontend/vercel.json` contains the SPA rewrite required for React Router routes to work after a direct refresh.
+- [x] **Mobile responsiveness** — the sidebar becomes a mobile navigation drawer, the header gets a mobile menu button, page spacing adapts to narrow screens, and data tables can scroll horizontally where necessary.
+- [x] **Error handling & loaders** — existing page-level loading/error states are retained; Trash has retry/error feedback, delete/restore actions show pending states, upload progress remains visible, and the global `ErrorBoundary` handles unexpected React errors.
+- [x] **Final README & screenshot checklist** — deployment variables and steps are documented below; `docs/screenshots/README.md` lists the real screenshots to capture from the running application.
+
+### Day 14 deployment steps
+
+**Frontend → Vercel**
+
+1. Import this repository into Vercel.
+2. Set **Root Directory** to `frontend`.
+3. Build command: `npm run build`.
+4. Output directory: `dist`.
+5. Add `VITE_API_URL` with the URL of the deployed FastAPI backend.
+6. Redeploy after changing environment variables.
+
+**Backend → Render/Fly.io/Railway**
+
+1. Deploy the `backend/` directory using the included `Dockerfile` / `render.yaml` / `fly.toml`.
+2. Set all production variables from `backend/.env.example`.
+3. Set `CORS_ORIGINS` to the exact Vercel frontend origin.
+4. Verify `/health` returns a healthy response.
+5. Put that backend URL into Vercel as `VITE_API_URL`.
+
+**Live verification:** test login, My Drive, upload/preview, search/sorting, sharing, Trash restore, and permanent delete against the deployed backend.
+
+**Screenshot checklist:** see `docs/screenshots/README.md`.
+
+---
+
 # Cloud Storage Service — MVP
 
 Google Drive–style file storage & sharing app. Stack: **React + Vite + Tailwind**

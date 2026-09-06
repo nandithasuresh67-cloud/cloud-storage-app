@@ -17,3 +17,7 @@ export async function createFolder({ name, parentId }) {
   const { data } = await api.post("/folders", { name, parent_id: parentId || undefined });
   return data;
 }
+
+export async function deleteFolder(folderId) {
+  await api.delete(`/folders/${folderId}`);
+}

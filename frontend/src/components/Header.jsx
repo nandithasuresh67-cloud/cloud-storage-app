@@ -1,12 +1,12 @@
 import { useEffect, useState } from "react";
 import { useLocation, useNavigate, useSearchParams } from "react-router-dom";
-import { Search, X } from "lucide-react";
+import { Menu, Search, X } from "lucide-react";
 import ConnectionStatus from "./ConnectionStatus";
 import UserMenu from "./UserMenu";
 
 const DEBOUNCE_MS = 300;
 
-export default function Header() {
+export default function Header({ onMenuClick = () => {} }) {
   const navigate = useNavigate();
   const location = useLocation();
   const [searchParams] = useSearchParams();
@@ -37,7 +37,15 @@ export default function Header() {
 
   return (
     <header className="flex flex-wrap items-center justify-between gap-3 border-b border-stone-200 bg-white px-4 py-3 sm:flex-nowrap sm:px-6">
-      <div className="order-2 flex w-full max-w-md items-center gap-2 rounded-lg border border-stone-200 bg-stone-50 px-3 py-2 sm:order-1">
+      <div className="order-1 flex items-center gap-2 sm:order-1">
+        <button
+          onClick={onMenuClick}
+          className="rounded-lg border border-stone-200 bg-white p-2 text-stone-600 hover:bg-stone-50 md:hidden"
+          aria-label="Open navigation"
+        >
+          <Menu className="h-4 w-4" strokeWidth={1.75} />
+        </button>
+        <div className="flex w-[min(62vw,28rem)] items-center gap-2 rounded-lg border border-stone-200 bg-stone-50 px-3 py-2 sm:w-full sm:max-w-md">
         <Search className="h-4 w-4 shrink-0 text-stone-400" strokeWidth={1.75} />
         <input
           type="text"
@@ -51,8 +59,9 @@ export default function Header() {
             <X className="h-3.5 w-3.5" strokeWidth={1.75} />
           </button>
         )}
+        </div>
       </div>
-      <div className="order-1 flex items-center gap-2 sm:order-2 sm:gap-3">
+      <div className="order-2 flex items-center gap-2 sm:order-2 sm:gap-3">
         <ConnectionStatus />
         <UserMenu />
       </div>

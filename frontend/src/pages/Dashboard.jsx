@@ -1,7 +1,7 @@
 import { useState } from "react";
 import { useDropzone } from "react-dropzone";
 import { useNavigate, useParams } from "react-router-dom";
-import { AlertCircle, FolderOpen, FolderPlus, Loader2, Share2, UploadCloud } from "lucide-react";
+import { AlertCircle, FolderOpen, FolderPlus, Loader2, Share2, Trash2, UploadCloud } from "lucide-react";
 import Breadcrumb from "../components/Breadcrumb";
 import EmptyState from "../components/EmptyState";
 import FilePreviewModal from "../components/FilePreviewModal";
@@ -11,6 +11,7 @@ import ShareModal from "../components/ShareModal";
 import SortableHeader from "../components/SortableHeader";
 import UploadProgressPanel from "../components/UploadProgressPanel";
 import { useCreateFolder, useFolderContents } from "../hooks/useFolderContents";
+import { useDeleteDriveItem } from "../hooks/useTrash";
 import { useFileUpload } from "../hooks/useFileUpload";
 import { formatBytes, formatDate } from "../utils/format";
 
@@ -20,6 +21,7 @@ export default function Dashboard() {
   const [showNewFolder, setShowNewFolder] = useState(false);
   const [previewFileId, setPreviewFileId] = useState(null);
   const [shareTarget, setShareTarget] = useState(null); // { fileId } | { folderId } | { fileId/folderId, name }
+  const [pendingDelete, setPendingDelete] = useState(null);
   const [sort, setSort] = useState({ sortBy: "name", sortOrder: "asc" });
 
   const {
@@ -38,6 +40,7 @@ export default function Dashboard() {
   } = useFolderContents(folderId, sort);
   const createFolderMutation = useCreateFolder(folderId);
   const { uploads, startUpload, dismissUpload } = useFileUpload(folderId);
+  const deleteMutation = useDeleteDriveItem();
 
   const { getRootProps, getInputProps, isDragActive, open } = useDropzone({
     noClick: true,
@@ -72,6 +75,24 @@ export default function Dashboard() {
 
   function handleSort(sortBy, sortOrder) {
     setSort({ sortBy, sortOrder });
+  }
+
+  function openDeleteForFolder(e, item) {
+    e.stopPropagation();
+    setPendingDelete({ type: "folder", id: item.id, name: item.name });
+  }
+
+  function openDeleteForFile(e, item) {
+    e.stopPropagation();
+    setPendingDelete({ type: "file", id: item.id, name: item.name });
+  }
+
+  function confirmDelete() {
+    if (!pendingDelete) return;
+    deleteMutation.mutate(
+      { type: pendingDelete.type, id: pendingDelete.id },
+      { onSuccess: () => setPendingDelete(null) }
+    );
   }
 
   const isEmpty = !isLoading && subfolders.length === 0 && files.length === 0;
@@ -112,6 +133,13 @@ export default function Dashboard() {
           </button>
         </div>
       </div>
+
+      {deleteMutation.error && (
+        <div className="mb-4 flex items-start justify-between gap-3 rounded-lg border border-red-200 bg-red-50 px-3 py-2 text-sm text-red-700" role="alert">
+          <span>{deleteMutation.error?.response?.data?.detail || "Could not move the item to Trash."}</span>
+          <button onClick={() => deleteMutation.reset()} className="font-medium hover:underline">Dismiss</button>
+        </div>
+      )}
 
       {isLoading && (
         <div className="flex items-center justify-center py-24">
@@ -161,13 +189,23 @@ export default function Dashboard() {
                     <td className="px-4 py-2.5 text-stone-400">—</td>
                     <td className="px-4 py-2.5 text-stone-500">{formatDate(f.updated_at)}</td>
                     <td className="px-4 py-2.5 text-right">
-                      <button
-                        onClick={(e) => openShareForFolder(e, f)}
-                        className="rounded-lg p-1.5 text-stone-400 opacity-0 hover:bg-stone-100 hover:text-stone-700 group-hover:opacity-100"
-                        aria-label={`Share ${f.name}`}
-                      >
-                        <Share2 className="h-4 w-4" strokeWidth={1.75} />
-                      </button>
+                      <div className="flex items-center justify-end gap-1 sm:gap-2">
+                        <button
+                          onClick={(e) => openShareForFolder(e, f)}
+                          className="rounded-lg p-1.5 text-stone-400 hover:bg-stone-100 hover:text-stone-700 sm:opacity-0 sm:group-hover:opacity-100"
+                          aria-label={`Share ${f.name}`}
+                        >
+                          <Share2 className="h-4 w-4" strokeWidth={1.75} />
+                        </button>
+                        <button
+                          onClick={(e) => openDeleteForFolder(e, f)}
+                          disabled={deleteMutation.isPending}
+                          className="rounded-lg p-1.5 text-stone-400 hover:bg-red-50 hover:text-red-700 disabled:cursor-not-allowed disabled:opacity-50"
+                          aria-label={`Move ${f.name} to Trash`}
+                        >
+                          <Trash2 className="h-4 w-4" strokeWidth={1.75} />
+                        </button>
+                      </div>
                     </td>
                   </tr>
                 ))}
@@ -190,13 +228,23 @@ export default function Dashboard() {
                     <td className="px-4 py-2.5 text-stone-500">{formatBytes(file.size_bytes)}</td>
                     <td className="px-4 py-2.5 text-stone-500">{formatDate(file.updated_at)}</td>
                     <td className="px-4 py-2.5 text-right">
-                      <button
-                        onClick={(e) => openShareForFile(e, file)}
-                        className="rounded-lg p-1.5 text-stone-400 opacity-0 hover:bg-stone-100 hover:text-stone-700 group-hover:opacity-100"
-                        aria-label={`Share ${file.name}`}
-                      >
-                        <Share2 className="h-4 w-4" strokeWidth={1.75} />
-                      </button>
+                      <div className="flex items-center justify-end gap-1 sm:gap-2">
+                        <button
+                          onClick={(e) => openShareForFile(e, file)}
+                          className="rounded-lg p-1.5 text-stone-400 hover:bg-stone-100 hover:text-stone-700 sm:opacity-0 sm:group-hover:opacity-100"
+                          aria-label={`Share ${file.name}`}
+                        >
+                          <Share2 className="h-4 w-4" strokeWidth={1.75} />
+                        </button>
+                        <button
+                          onClick={(e) => openDeleteForFile(e, file)}
+                          disabled={deleteMutation.isPending}
+                          className="rounded-lg p-1.5 text-stone-400 hover:bg-red-50 hover:text-red-700 disabled:cursor-not-allowed disabled:opacity-50"
+                          aria-label={`Move ${file.name} to Trash`}
+                        >
+                          <Trash2 className="h-4 w-4" strokeWidth={1.75} />
+                        </button>
+                      </div>
                     </td>
                   </tr>
                 ))}
@@ -236,6 +284,39 @@ export default function Dashboard() {
           isPending={createFolderMutation.isPending}
           error={createFolderMutation.error?.response?.data?.detail}
         />
+      )}
+
+      {pendingDelete && (
+        <div
+          className="fixed inset-0 z-50 flex items-center justify-center bg-black/30 p-4"
+          role="dialog"
+          aria-modal="true"
+          aria-labelledby="move-to-trash-title"
+        >
+          <div className="w-full max-w-md rounded-xl bg-white p-5 shadow-xl">
+            <h2 id="move-to-trash-title" className="text-base font-semibold text-stone-900">Move to Trash?</h2>
+            <p className="mt-2 text-sm leading-6 text-stone-600">
+              <span className="font-medium text-stone-800">{pendingDelete.name}</span> will be moved to Trash. You can restore it later.
+            </p>
+            <div className="mt-5 flex flex-col-reverse gap-2 sm:flex-row sm:justify-end">
+              <button
+                onClick={() => setPendingDelete(null)}
+                disabled={deleteMutation.isPending}
+                className="rounded-lg border border-stone-300 px-4 py-2 text-sm font-medium text-stone-700 hover:bg-stone-50 disabled:opacity-60"
+              >
+                Cancel
+              </button>
+              <button
+                onClick={confirmDelete}
+                disabled={deleteMutation.isPending}
+                className="flex items-center justify-center gap-2 rounded-lg bg-red-700 px-4 py-2 text-sm font-medium text-white hover:bg-red-800 disabled:opacity-60"
+              >
+                {deleteMutation.isPending && <Loader2 className="h-4 w-4 animate-spin" />}
+                Move to Trash
+              </button>
+            </div>
+          </div>
+        </div>
       )}
 
       {previewFileId && <FilePreviewModal fileId={previewFileId} onClose={() => setPreviewFileId(null)} />}
