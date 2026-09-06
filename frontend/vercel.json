@@ -1,3 +1,13 @@
 {
-  "rewrites": [{ "source": "/(.*)", "destination": "/index.html" }]
+  "rewrites": [
+    { "source": "/auth/:path*", "destination": "https://cloud-storage-backend-aqo1.onrender.com/auth/:path*" },
+    { "source": "/folders/:path*", "destination": "https://cloud-storage-backend-aqo1.onrender.com/folders/:path*" },
+    { "source": "/files/:path*", "destination": "https://cloud-storage-backend-aqo1.onrender.com/files/:path*" },
+    { "source": "/shares/:path*", "destination": "https://cloud-storage-backend-aqo1.onrender.com/shares/:path*" },
+    { "source": "/trash/:path*", "destination": "https://cloud-storage-backend-aqo1.onrender.com/trash/:path*" },
+    { "source": "/public-link/:path*", "destination": "https://cloud-storage-backend-aqo1.onrender.com/public-link/:path*" },
+    { "source": "/search", "destination": "https://cloud-storage-backend-aqo1.onrender.com/search" },
+    { "source": "/health", "destination": "https://cloud-storage-backend-aqo1.onrender.com/health" },
+    { "source": "/(.*)", "destination": "/index.html" }
+  ]
 }
